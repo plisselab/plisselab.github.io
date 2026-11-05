@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { arred, brl, custoUnitarioInsumo, dataHora, novoId, rendePara, unidadeFicha, type Dados } from './dados'
+import { arred, brl, custoProduto, custoUnitarioInsumo, dataHora, novoId, pct, rendePara, unidadeFicha, type Dados } from './dados'
 import type { Insumo, MovEstoque, Movimento, Produto } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 
@@ -377,6 +377,8 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
   // Calculadora: cada espeto de uma carne só (carne, frango, linguiça…) recebe toda a carne que sobra
   // depois dos que foram digitados à mão (ex.: os mistos). Se dois espetos usam a mesma carne, divide igual.
   const calculados: Record<string, number> = {}
+  /** Carne livre (kg) para cada espeto calculado — base da comparação de pesos. */
+  const livrePorProduto: Record<string, number> = {}
   if (auto) {
     const usadoManual: Record<string, number> = {}
     for (const p of opcoes) {
@@ -397,10 +399,40 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
       for (const p of ps) {
         const g = gr(p, carnesDe(p)[0])
         calculados[p.id] = Math.floor((livreKg * 1000) / g + 1e-6)
+        livrePorProduto[p.id] = livreKg
       }
     }
   }
   const qtds: Record<string, number> = { ...calculados, ...manual }
+
+  // ---- projeção de lucro (preço de venda − custo pela ficha com os gramas escolhidos) ----
+  const custoCom = (p: Produto, troca?: { insumoId: string; g: number }) =>
+    custoProduto(
+      { custoDireto: p.custoDireto, ficha: p.ficha.map((f) => ({ ...f, qtd: troca && f.insumoId === troca.insumoId ? troca.g : gr(p, f) })) },
+      dados.insumos,
+    )
+  const projecao = opcoes
+    .filter((p) => (qtds[p.id] ?? 0) > 0)
+    .map((p) => {
+      const n = qtds[p.id]
+      const custo = custoCom(p)
+      return { p, n, receita: p.preco * n, custo: custo * n, lucro: (p.preco - custo) * n }
+    })
+  const proj = projecao.reduce((t, x) => ({ receita: t.receita + x.receita, custo: t.custo + x.custo, lucro: t.lucro + x.lucro }), { receita: 0, custo: 0, lucro: 0 })
+
+  /** Para espetos calculados pela carne: quantos dá e quanto lucra com outros pesos. */
+  function compararPesos(p: Produto) {
+    const livre = livrePorProduto[p.id]
+    const carne = carnesDe(p)[0]
+    if (livre === undefined || !carne || livre <= 0) return []
+    const atual = gr(p, carne)
+    const opcoesG = [...new Set([atual - 20, atual - 10, atual, atual + 10, atual + 20, carne.qtd].filter((g) => g >= 30))].sort((a, b) => a - b)
+    return opcoesG.map((g) => {
+      const n = Math.floor((livre * 1000) / g + 1e-6)
+      const custo = custoCom(p, { insumoId: carne.insumoId, g })
+      return { g, n, lucroUn: p.preco - custo, lucro: (p.preco - custo) * n, margem: p.preco > 0 ? ((p.preco - custo) / p.preco) * 100 : 0, chave: `${p.id}:${carne.insumoId}` }
+    })
+  }
 
   // consumo pela ficha: insumo → produto → quantidade (na unidade do insumo)
   const porInsumo = new Map<string, { ins: Insumo; partes: { produto: Produto; qtd: number }[] }>()
@@ -563,10 +595,107 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
                       })}
                     </div>
                   )}
+                  {(() => {
+                    const c = custoCom(p)
+                    const lucroUn = p.preco - c
+                    const n = qtds[p.id] ?? 0
+                    return (
+                      <div className={`mt-2 text-xs ${lucroUn < 0 ? 'text-red-700' : 'text-stone-600'}`}>
+                        Vende a {brl(p.preco)} · custa {brl(c)} · <b className={lucroUn < 0 ? '' : 'text-emerald-700'}>lucro {brl(lucroUn)}</b> por espeto (
+                        {pct(p.preco > 0 ? (lucroUn / p.preco) * 100 : 0)})
+                        {n > 0 && (
+                          <span className="block font-semibold text-stone-800">
+                            {n} espetos → lucro de <span className={lucroUn < 0 ? 'text-red-700' : 'text-emerald-700'}>{brl(lucroUn * n)}</span> se vender todos
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })()}
+                  {(() => {
+                    const comp = compararPesos(p)
+                    if (comp.length < 2) return null
+                    const melhor = Math.max(...comp.map((x) => x.lucro))
+                    return (
+                      <details className="mt-1 text-xs">
+                        <summary className="cursor-pointer font-semibold text-orange-700">Comparar pesos</summary>
+                        <table className="mt-1 w-full">
+                          <thead>
+                            <tr className="text-left text-stone-500">
+                              <th className="font-semibold">Peso</th>
+                              <th className="text-right font-semibold">Espetos</th>
+                              <th className="text-right font-semibold">Lucro/un</th>
+                              <th className="text-right font-semibold">Lucro total</th>
+                              <th />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {comp.map((x) => (
+                              <tr key={x.g} className={x.g === gr(p, carnesDe(p)[0]) ? 'font-bold text-orange-800' : ''}>
+                                <td>{x.g} g</td>
+                                <td className="text-right">{x.n}</td>
+                                <td className="text-right">
+                                  {brl(x.lucroUn)} <span className="text-stone-400">({Math.round(x.margem)}%)</span>
+                                </td>
+                                <td className={`text-right ${x.lucro === melhor ? 'text-emerald-700' : ''}`}>
+                                  {brl(x.lucro)}
+                                  {x.lucro === melhor && ' ★'}
+                                </td>
+                                <td className="text-right">
+                                  {x.g !== gr(p, carnesDe(p)[0]) && (
+                                    <button className="text-orange-700 underline" onClick={() => setGramas((g) => ({ ...g, [x.chave]: x.g }))}>
+                                      usar
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p className="mt-1 text-stone-500">Mesmo preço de venda; espeto mais leve rende mais unidades, mas o cliente percebe o tamanho.</p>
+                      </details>
+                    )
+                  })()}
                 </li>
               )
             })}
           </ul>
+
+          {projecao.length > 0 && (
+            <div className="mt-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 p-3">
+              <h3 className="font-extrabold text-emerald-900">📈 Projeção se vender todos os espetos desta montagem</h3>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
+                <div className="rounded-lg bg-white p-2">
+                  <div className="text-xs text-stone-600">Faturamento</div>
+                  <div className="text-lg font-black">{brl(proj.receita)}</div>
+                </div>
+                <div className="rounded-lg bg-white p-2">
+                  <div className="text-xs text-stone-600">Custo (carne, palito…)</div>
+                  <div className="text-lg font-black">{brl(proj.custo)}</div>
+                </div>
+                <div className="rounded-lg bg-white p-2">
+                  <div className="text-xs text-stone-600">Lucro</div>
+                  <div className={`text-lg font-black ${proj.lucro < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{brl(proj.lucro)}</div>
+                </div>
+                <div className="rounded-lg bg-white p-2">
+                  <div className="text-xs text-stone-600">Margem</div>
+                  <div className="text-lg font-black">{pct(proj.receita > 0 ? (proj.lucro / proj.receita) * 100 : 0)}</div>
+                </div>
+              </div>
+              <ul className="mt-2 text-xs text-stone-700">
+                {projecao.map((x) => (
+                  <li key={x.p.id} className="flex justify-between">
+                    <span>
+                      {x.n}× {x.p.nome}
+                    </span>
+                    <span>
+                      {brl(x.receita)} − {brl(x.custo)} = <b>{brl(x.lucro)}</b>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1 text-xs text-stone-500">Antes das taxas da maquininha e das despesas do dia (carvão, gás…). Usa o preço de venda cadastrado.</p>
+            </div>
+          )}
           {Object.entries(gramas).some(([k, v]) => {
             const [pid, iid] = k.split(':')
             return qtds[pid] > 0 && dados.produtos.find((x) => x.id === pid)?.ficha.find((f) => f.insumoId === iid)?.qtd !== v
