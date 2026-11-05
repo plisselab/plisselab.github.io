@@ -569,3 +569,30 @@ export function reduzirImagem(arquivo: File, lado = 220): Promise<string> {
     leitor.readAsDataURL(arquivo)
   })
 }
+
+// ---------- backup ----------
+
+export function montarBackup(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' | 'caixas' | 'movEstoque' | 'config'>) {
+  return {
+    versao: 2,
+    geradoEm: new Date().toISOString(),
+    insumos: d.insumos,
+    produtos: d.produtos,
+    pedidos: d.pedidos,
+    caixas: d.caixas,
+    movEstoque: d.movEstoque,
+    config: d.config,
+  }
+}
+
+/** Troca todos os dados por um backup. Mantém as ligações de salvamento deste aparelho (planilha). */
+export function aplicarBackup(d: Dados, b: Partial<ReturnType<typeof montarBackup>>) {
+  if (!Array.isArray(b.produtos) || !Array.isArray(b.pedidos) || !Array.isArray(b.caixas)) throw new Error('Arquivo de backup inválido.')
+  d.setInsumos(b.insumos ?? [])
+  d.setProdutos(b.produtos)
+  d.setPedidos(b.pedidos)
+  d.setCaixas(b.caixas)
+  d.setMovEstoque(b.movEstoque ?? [])
+  if (b.config)
+    d.setConfig({ ...b.config, planilhaUrl: d.config.planilhaUrl, planilhaChave: d.config.planilhaChave, planilhaAuto: d.config.planilhaAuto })
+}

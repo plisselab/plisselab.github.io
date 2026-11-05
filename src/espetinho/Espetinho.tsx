@@ -5,6 +5,7 @@ import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
 import Estoque from './Estoque'
 import Painel from './Painel'
+import { usePasta } from './pasta'
 import { usePlanilha } from './planilha'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
@@ -25,6 +26,7 @@ const ABAS: { id: Aba; nome: string; icone: string }[] = [
 export default function Espetinho() {
   const dados = useEspetoDados()
   const planilha = usePlanilha(dados)
+  const pasta = usePasta(dados)
   const [carregando, setCarregando] = useState(false)
   const [aba, setAba] = useState<Aba>('venda')
 
@@ -59,6 +61,27 @@ export default function Espetinho() {
               </button>
             ))}
           </nav>
+          {pasta.estado.tipo !== 'nenhuma' && (
+            <button
+              onClick={() => (pasta.estado.tipo === 'precisaPermissao' ? void pasta.reautorizar() : setAba('config'))}
+              title={pasta.estado.tipo === 'erro' ? pasta.estado.msg : `Salvando na pasta ${pasta.estado.nome}`}
+              className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ${
+                pasta.estado.tipo === 'erro' || pasta.estado.tipo === 'precisaPermissao'
+                  ? 'bg-red-600 text-white'
+                  : pasta.estado.tipo === 'ok'
+                    ? 'text-emerald-400'
+                    : 'text-amber-300'
+              }`}
+            >
+              {pasta.estado.tipo === 'ok'
+                ? '📁 salvo'
+                : pasta.estado.tipo === 'precisaPermissao'
+                  ? '📁 clique p/ salvar'
+                  : pasta.estado.tipo === 'erro'
+                    ? '⚠ pasta'
+                    : '📁 salvando…'}
+            </button>
+          )}
           {planilha.ligado && (
             <button
               onClick={() => setAba('config')}
@@ -90,6 +113,16 @@ export default function Espetinho() {
           </div>
         </div>
       </header>
+      {pasta.estado.tipo === 'precisaPermissao' && (
+        <div className="bg-amber-500 text-stone-950">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
+            <span className="flex-1 font-semibold">📁 O Chrome pede para confirmar: continuar salvando as vendas na pasta “{pasta.estado.nome}”?</span>
+            <button className="rounded-lg bg-stone-900 px-4 py-1.5 font-bold text-white" onClick={() => void pasta.reautorizar()}>
+              Sim, continuar salvando
+            </button>
+          </div>
+        </div>
+      )}
       {planilha.remotoMaisNovo && (
         <div className="bg-sky-600 text-white">
           <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
@@ -128,7 +161,7 @@ export default function Espetinho() {
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={setAba} />}
         {aba === 'relatorios' && <Relatorios dados={dados} />}
         {aba === 'cadastros' && <Cadastros dados={dados} />}
-        {aba === 'config' && <ConfigTela dados={dados} planilha={planilha} />}
+        {aba === 'config' && <ConfigTela dados={dados} planilha={planilha} pasta={pasta} />}
       </main>
     </div>
   )

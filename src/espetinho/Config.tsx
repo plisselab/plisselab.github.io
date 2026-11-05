@@ -1,27 +1,20 @@
 import { useRef, useState } from 'react'
 import { codigoAppsScript } from './appsScript'
-import { novoId, type Dados } from './dados'
+import { aplicarBackup, montarBackup, novoId, type Dados } from './dados'
+import type { Pasta } from './pasta'
 import { urlValida, type Planilha } from './planilha'
 import { imprimirTeste } from './impressao'
 import type { Config } from './tipos'
 import { CampoNumero, CampoTexto, btn } from './ui'
 
-export default function ConfigTela({ dados, planilha }: { dados: Dados; planilha: Planilha }) {
+export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; planilha: Planilha; pasta: Pasta }) {
   const { config, setConfig } = dados
   const set = (m: Partial<Config>) => setConfig((c) => ({ ...c, ...m }))
   const [novaObs, setNovaObs] = useState('')
   const arquivo = useRef<HTMLInputElement>(null)
 
   function exportar() {
-    const backup = {
-      versao: 1,
-      geradoEm: new Date().toISOString(),
-      insumos: dados.insumos,
-      produtos: dados.produtos,
-      pedidos: dados.pedidos,
-      caixas: dados.caixas,
-      config: dados.config,
-    }
+    const backup = montarBackup(dados)
     const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
@@ -35,11 +28,7 @@ export default function ConfigTela({ dados, planilha }: { dados: Dados; planilha
       const b = JSON.parse(await f.text())
       if (!Array.isArray(b.produtos) || !Array.isArray(b.pedidos) || !Array.isArray(b.caixas)) throw new Error()
       if (!confirm('Isso substitui TODOS os dados deste aparelho pelos do backup. Continuar?')) return
-      dados.setInsumos(b.insumos ?? [])
-      dados.setProdutos(b.produtos)
-      dados.setPedidos(b.pedidos)
-      dados.setCaixas(b.caixas)
-      if (b.config) dados.setConfig(b.config)
+      aplicarBackup(dados, b)
       alert('Backup restaurado!')
     } catch {
       alert('Arquivo de backup inválido.')
@@ -214,7 +203,14 @@ export default function ConfigTela({ dados, planilha }: { dados: Dados; planilha
         />
       </section>
 
-      <SecaoPlanilha dados={dados} planilha={planilha} />
+      <SecaoPasta dados={dados} pasta={pasta} />
+
+      <details className="rounded-2xl border-2 border-stone-200 bg-white p-4" open={planilha.ligado}>
+        <summary className="cursor-pointer font-extrabold">Avançado: Google Planilhas com abas atualizadas</summary>
+        <div className="mt-3">
+          <SecaoPlanilha dados={dados} planilha={planilha} />
+        </div>
+      </details>
 
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">Backup</h2>
@@ -386,6 +382,106 @@ function SecaoPlanilha({ dados, planilha }: { dados: Dados; planilha: Planilha }
             </div>
           </details>
         </div>
+      )}
+    </section>
+  )
+}
+
+function SecaoPasta({ dados, pasta }: { dados: Dados; pasta: Pasta }) {
+  const est = pasta.estado
+  const [ocupado, setOcupado] = useState(false)
+  async function rodar(f: () => Promise<void>) {
+    setOcupado(true)
+    try {
+      await f()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border-2 border-emerald-300 bg-white p-4">
+      <h2 className="text-lg font-extrabold">📁 Salvar as vendas no Google Drive (recomendado)</h2>
+      {!pasta.suportado ? (
+        <p className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+          Este navegador não deixa salvar direto numa pasta. Use o <b>Google Chrome</b> ou o <b>Microsoft Edge</b> no computador.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm text-stone-600">
+            O sistema grava sozinho, a cada venda, uma cópia de tudo numa pasta do computador. Se for a pasta do Google Drive, ela vai para a nuvem
+            automaticamente — e você vê as vendas pelo celular no app do Drive.
+          </p>
+          <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm">
+            <li>
+              Instale o <b>Google Drive para computador</b> (procure “Google Drive para computador” no Google, baixe, instale e entre com sua conta). Vai
+              aparecer o disco/pasta <b>“Google Drive”</b> no computador.
+            </li>
+            <li>
+              Dentro de <b>Google Drive → Meu Drive</b>, crie uma pasta chamada <b>PDV Espetinho</b>.
+            </li>
+            <li>
+              Clique abaixo, escolha essa pasta e confirme “Permitir” / “Salvar alterações”. Se o Chrome oferecer <b>“Permitir em todas as visitas”</b>,
+              escolha essa opção.
+            </li>
+          </ol>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button className={btn.verde + ' !py-2'} disabled={ocupado} onClick={() => rodar(pasta.escolher)}>
+              {est.tipo === 'nenhuma' ? '📁 Escolher pasta' : '📁 Trocar pasta'}
+            </button>
+            {est.tipo !== 'nenhuma' && (
+              <>
+                <button className={btn.secundario} disabled={ocupado} onClick={() => rodar(pasta.salvar)}>
+                  Salvar agora
+                </button>
+                <button
+                  className={btn.secundario}
+                  disabled={ocupado}
+                  onClick={() =>
+                    rodar(async () => {
+                      const b = await pasta.lerBackup()
+                      const quando = b.geradoEm ? new Date(b.geradoEm).toLocaleString('pt-BR') : '?'
+                      if (!confirm(`Trocar os dados deste computador pelos da pasta (salvos em ${quando})?`)) return
+                      aplicarBackup(dados, b)
+                      alert('Dados carregados da pasta.')
+                    })
+                  }
+                >
+                  ⬇ Carregar da pasta
+                </button>
+                <button className="text-sm text-stone-500 underline" onClick={() => confirm('Parar de salvar nesta pasta? (os arquivos continuam lá)') && void pasta.esquecer()}>
+                  parar de salvar
+                </button>
+              </>
+            )}
+          </div>
+          {est.tipo !== 'nenhuma' && (
+            <div
+              className={`mt-3 rounded-xl p-3 text-sm font-semibold ${
+                est.tipo === 'erro' || est.tipo === 'precisaPermissao' ? 'bg-red-50 text-red-800' : est.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'
+              }`}
+            >
+              {est.tipo === 'ok' && `✔ Salvando na pasta “${est.nome}”.${est.em ? ` Última gravação: ${new Date(est.em).toLocaleTimeString('pt-BR')}.` : ''}`}
+              {est.tipo === 'precisaPermissao' && (
+                <>
+                  O Chrome precisa que você confirme o acesso à pasta “{est.nome}”.{' '}
+                  <button className="underline" onClick={() => void pasta.reautorizar()}>
+                    Confirmar agora
+                  </button>
+                </>
+              )}
+              {(est.tipo === 'pendente' || est.tipo === 'salvando') && `Salvando na pasta “${est.nome}”…`}
+              {est.tipo === 'erro' && `Erro ao salvar na pasta “${est.nome}”: ${est.msg}`}
+            </div>
+          )}
+          <p className="mt-2 text-xs text-stone-500">
+            Arquivos gravados: <b>pdv-espetinho-backup.json</b> (tudo, para restaurar), <b>Caixas.csv</b>, <b>Pedidos.csv</b>, <b>Itens vendidos.csv</b>,{' '}
+            <b>Estoque.csv</b>, <b>Despesas.csv</b> (abrem no Excel e no Google Planilhas) e uma cópia por dia em <b>backups-diarios</b>. Em outro
+            computador: escolha a mesma pasta do Drive e o sistema pergunta se quer usar os dados de lá.
+          </p>
+        </>
       )}
     </section>
   )

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { NOMES_CATEGORIA, NOMES_FORMA, custoUnitarioInsumo, novoId, resumirCaixa, type Dados } from './dados'
+import { NOMES_CATEGORIA, NOMES_FORMA, aplicarBackup, custoUnitarioInsumo, montarBackup, novoId, resumirCaixa, type Dados } from './dados'
 
 /**
  * Sincronização com uma planilha do Google, via Apps Script implantado como app da Web.
@@ -179,7 +179,7 @@ export function usePlanilha(dados: Dados) {
         atualizadoEm: versao,
         aparelho: aparelho(),
         tabelas: montarTabelas(d),
-        dados: { versao: 2, insumos: d.insumos, produtos: d.produtos, pedidos: d.pedidos, caixas: d.caixas, movEstoque: d.movEstoque, config: d.config },
+        dados: montarBackup(d),
       })
       gravarMeta({ versao })
       setEstado({ tipo: 'ok', em: versao })
@@ -253,14 +253,8 @@ export function usePlanilha(dados: Dados) {
     const r = await chamar(url, { acao: 'carregar', chave: config.planilhaChave })
     const b = r.dados
     if (!b || !Array.isArray(b.produtos)) throw new Error('A planilha ainda não tem dados salvos.')
-    const d = dadosRef.current
     ignorarProxima.current = true
-    d.setInsumos(b.insumos ?? [])
-    d.setProdutos(b.produtos)
-    d.setPedidos(b.pedidos ?? [])
-    d.setCaixas(b.caixas ?? [])
-    d.setMovEstoque(b.movEstoque ?? [])
-    if (b.config) d.setConfig({ ...b.config, planilhaUrl: d.config.planilhaUrl, planilhaChave: d.config.planilhaChave, planilhaAuto: d.config.planilhaAuto })
+    aplicarBackup(dadosRef.current, b)
     gravarMeta({ versao: r.atualizadoEm })
     setRemotoMaisNovo(null)
     setEstado({ tipo: 'ok', em: r.atualizadoEm })
