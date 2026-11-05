@@ -1,5 +1,5 @@
 import { useLocalStorage } from '../hooks/useLocalStorage'
-import type { Caixa, Categoria, Config, FormaPagamento, Insumo, ItemFicha, Pedido, Produto, Unidade } from './tipos'
+import type { Caixa, Categoria, Config, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
 
 export const novoId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -26,7 +26,8 @@ export const NOMES_FORMA: Record<FormaPagamento, string> = {
 export const EMOJI_FORMA: Record<FormaPagamento, string> = { dinheiro: '💵', pix: '⚡', debito: '💳', credito: '💳' }
 export const FORMAS: FormaPagamento[] = ['dinheiro', 'pix', 'debito', 'credito']
 
-export const NOMES_CATEGORIA: Record<Categoria, string> = { espeto: 'Espetos', bebida: 'Bebidas', outro: 'Outros' }
+export const NOMES_CATEGORIA: Record<Categoria, string> = { espeto: 'Espetos', combo: 'Combos e jantinhas', bebida: 'Bebidas', outro: 'Outros' }
+export const CATEGORIAS: Categoria[] = ['espeto', 'combo', 'bebida', 'outro']
 
 // ---------- unidades ----------
 
@@ -43,22 +44,70 @@ export function custoItemFicha(item: ItemFicha, insumos: Insumo[]) {
   return (item.qtd / fatorFicha(ins.unidade)) * custoUnitarioInsumo(ins)
 }
 
+/** Custo de 1 unidade só pela ficha técnica + custo direto (sem os itens de combo). */
 export function custoProduto(p: Pick<Produto, 'ficha' | 'custoDireto'>, insumos: Insumo[]) {
   return (p.custoDireto || 0) + p.ficha.reduce((s, f) => s + custoItemFicha(f, insumos), 0)
+}
+
+/**
+ * Custo de 1 unidade incluindo os produtos de um combo.
+ * Com as escolhas da venda usa o custo real; sem elas, considera a opção mais cara (estimativa conservadora).
+ */
+export function custoCompleto(p: Produto, insumos: Insumo[], produtos: Produto[], escolhas?: Escolha[], nivel = 0): number {
+  let total = custoProduto(p, insumos)
+  if (!p.componentes?.length || nivel > 2) return total
+  const custoDe = (id: string) => {
+    const x = produtos.find((y) => y.id === id)
+    return x ? custoCompleto(x, insumos, produtos, undefined, nivel + 1) : 0
+  }
+  if (escolhas) return total + escolhas.reduce((s, e) => s + custoDe(e.produtoId) * e.qtd, 0)
+  for (const c of p.componentes) total += c.qtd * Math.max(0, ...c.opcoes.map(custoDe))
+  return total
+}
+
+/** Quantas unidades de cada produto saem do estoque com estes itens (inclui o que vai dentro dos combos). */
+export function consumoDosItens(itens: Pick<ItemPedido, 'produtoId' | 'qtd' | 'escolhas'>[]) {
+  const m: Record<string, number> = {}
+  for (const i of itens) {
+    m[i.produtoId] = (m[i.produtoId] ?? 0) + i.qtd
+    for (const e of i.escolhas ?? []) m[e.produtoId] = (m[e.produtoId] ?? 0) + e.qtd * i.qtd
+  }
+  return m
+}
+
+/** Aplica uma baixa (sinal −1) ou devolução (+1) no estoque dos produtos controlados. */
+export function moverEstoqueProdutos(produtos: Produto[], consumo: Record<string, number>, sinal: 1 | -1) {
+  return produtos.map((p) =>
+    p.estoque !== undefined && consumo[p.id] ? { ...p, estoque: p.estoque + sinal * consumo[p.id] } : p,
+  )
+}
+
+/** Espetos que vão para a brasa (avulsos + dentro de combos), agrupados por nome. */
+export function espetosParaBrasa(itens: ItemPedido[]) {
+  const m = new Map<string, number>()
+  for (const i of itens) {
+    if (i.categoria === 'espeto') m.set(i.nome, (m.get(i.nome) ?? 0) + i.qtd)
+    for (const e of i.escolhas ?? []) if (e.categoria === 'espeto') m.set(e.nome, (m.get(e.nome) ?? 0) + e.qtd * i.qtd)
+  }
+  return [...m.entries()].map(([nome, qtd]) => ({ nome, qtd }))
 }
 
 // ---------- dados iniciais (exemplo, pode editar tudo) ----------
 
 const INSUMOS_INICIAIS: Insumo[] = [
-  { id: 'ins-carne', nome: 'Carne bovina (alcatra/miolo)', unidade: 'kg', precoCompra: 45, qtdCompra: 1 },
-  { id: 'ins-frango', nome: 'Frango (peito/sobrecoxa)', unidade: 'kg', precoCompra: 22, qtdCompra: 1 },
-  { id: 'ins-linguica', nome: 'Linguiça toscana', unidade: 'kg', precoCompra: 25, qtdCompra: 1 },
-  { id: 'ins-coracao', nome: 'Coração de frango', unidade: 'kg', precoCompra: 30, qtdCompra: 1 },
-  { id: 'ins-queijo', nome: 'Queijo coalho', unidade: 'kg', precoCompra: 50, qtdCompra: 1 },
+  { id: 'ins-carne', nome: 'Carne bovina (alcatra/miolo)', unidade: 'kg', precoCompra: 45, qtdCompra: 1, estoque: 0 },
+  { id: 'ins-frango', nome: 'Frango (peito/sobrecoxa)', unidade: 'kg', precoCompra: 22, qtdCompra: 1, estoque: 0 },
+  { id: 'ins-linguica', nome: 'Linguiça toscana', unidade: 'kg', precoCompra: 25, qtdCompra: 1, estoque: 0 },
+  { id: 'ins-coracao', nome: 'Coração de frango', unidade: 'kg', precoCompra: 30, qtdCompra: 1, estoque: 0 },
+  { id: 'ins-queijo', nome: 'Queijo coalho', unidade: 'kg', precoCompra: 50, qtdCompra: 1, estoque: 0 },
   { id: 'ins-palito', nome: 'Palito de bambu', unidade: 'un', precoCompra: 12, qtdCompra: 100 },
   { id: 'ins-tempero', nome: 'Sal grosso + tempero', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
   { id: 'ins-farofa', nome: 'Farofa', unidade: 'kg', precoCompra: 14, qtdCompra: 1 },
   { id: 'ins-guardanapo', nome: 'Guardanapo/saquinho', unidade: 'pct', precoCompra: 10, qtdCompra: 1 },
+  { id: 'ins-baiao', nome: 'Baião (arroz + feijão + temperos)', unidade: 'kg', precoCompra: 12, qtdCompra: 1 },
+  { id: 'ins-vinagrete', nome: 'Vinagrete', unidade: 'kg', precoCompra: 10, qtdCompra: 1 },
+  { id: 'ins-mandioca', nome: 'Mandioca cozida', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
+  { id: 'ins-marmita', nome: 'Marmitex/embalagem', unidade: 'un', precoCompra: 45, qtdCompra: 100 },
 ]
 
 const espeto = (id: string, nome: string, emoji: string, preco: number, insumoId: string, gramas: number): Produto => ({
@@ -69,6 +118,7 @@ const espeto = (id: string, nome: string, emoji: string, preco: number, insumoId
   emoji,
   custoDireto: 0.05,
   ativo: true,
+  estoque: 0,
   ficha: [
     { insumoId, qtd: gramas },
     { insumoId: 'ins-palito', qtd: 1 },
@@ -103,6 +153,37 @@ const PRODUTOS_INICIAIS: Produto[] = [
     ativo: true,
     ficha: [{ insumoId: 'ins-farofa', qtd: 50 }],
   },
+  {
+    id: 'p-jantinha',
+    nome: 'Jantinha',
+    categoria: 'combo',
+    preco: 22,
+    emoji: '🍛',
+    custoDireto: 0,
+    ativo: true,
+    ficha: [
+      { insumoId: 'ins-baiao', qtd: 250 },
+      { insumoId: 'ins-vinagrete', qtd: 60 },
+      { insumoId: 'ins-mandioca', qtd: 120 },
+      { insumoId: 'ins-farofa', qtd: 30 },
+      { insumoId: 'ins-marmita', qtd: 1 },
+    ],
+    componentes: [{ id: 'c-espeto', nome: 'Espeto', qtd: 1, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-coracao', 'p-queijo'] }],
+  },
+  {
+    id: 'p-combo3',
+    nome: 'Combo 3 espetos + refri',
+    categoria: 'combo',
+    preco: 32,
+    emoji: '🍢',
+    custoDireto: 0,
+    ativo: true,
+    ficha: [],
+    componentes: [
+      { id: 'c-espetos', nome: 'Espeto', qtd: 3, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-coracao', 'p-queijo'] },
+      { id: 'c-refri', nome: 'Refri', qtd: 1, opcoes: ['p-coca', 'p-guarana'] },
+    ],
+  },
   bebida('p-coca', 'Coca-Cola lata', '🥤', 6, 3.2),
   bebida('p-guarana', 'Guaraná lata', '🥤', 6, 2.9),
   bebida('p-agua', 'Água', '💧', 4, 1.5),
@@ -133,6 +214,7 @@ export function useEspetoDados() {
   const [pedidos, setPedidos] = useLocalStorage<Pedido[]>('espeto:pedidos', [])
   const [caixas, setCaixas] = useLocalStorage<Caixa[]>('espeto:caixas', [])
   const [configSalva, setConfig] = useLocalStorage<Config>('espeto:config', CONFIG_INICIAL)
+  const [movEstoque, setMovEstoque] = useLocalStorage<MovEstoque[]>('espeto:estoque-mov', [])
   const config = { ...CONFIG_INICIAL, ...configSalva }
   const caixaAberto = caixas.find((c) => !c.fechadoEm) ?? null
   return {
@@ -146,6 +228,8 @@ export function useEspetoDados() {
     setCaixas,
     config,
     setConfig,
+    movEstoque,
+    setMovEstoque,
     caixaAberto,
   }
 }
@@ -165,9 +249,16 @@ export interface LinhaProduto {
   nome: string
   emoji: string
   categoria: Categoria
+  /** Unidades que saíram, avulsas + dentro de combos. */
   vendidos: number
-  estoque?: number
-  restante?: number
+  /** Quantas dessas saíram dentro de combos/jantinhas. */
+  emCombos: number
+  /** Estoque na abertura do caixa. */
+  inicial?: number
+  /** Entradas no período (montagem, compra, contagem). */
+  entradas: number
+  /** Estoque no fechamento (ou agora, se o caixa está aberto). */
+  final?: number
   receita: number
   custo: number
 }
@@ -197,16 +288,11 @@ export interface Resumo {
   dinheiroEsperado: number
   emConta: number
   porProduto: LinhaProduto[]
+  /** Compras de insumos/mercadorias registradas no período (dinheiro que saiu para repor estoque). */
+  compras: number
 }
 
-/** Vendidos por produto, considerando só pedidos válidos. */
-export function vendidosPorProduto(pedidos: Pedido[]) {
-  const m: Record<string, number> = {}
-  for (const p of pedidos) if (!p.cancelado) for (const i of p.itens) m[i.produtoId] = (m[i.produtoId] ?? 0) + i.qtd
-  return m
-}
-
-export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Produto[]): Resumo {
+export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Produto[], movEstoque: MovEstoque[] = []): Resumo {
   const doCaixa = todosPedidos.filter((p) => p.caixaId === caixa.id)
   const pedidos = doCaixa.filter((p) => !p.cancelado)
   const cancelados = doCaixa.filter((p) => p.cancelado)
@@ -228,42 +314,46 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     for (const i of p.itens) {
       itensVendidos += i.qtd
       if (i.categoria === 'espeto') espetosVendidos += i.qtd
-      const l = linhas.get(i.produtoId) ?? {
-        produtoId: i.produtoId,
-        nome: i.nome,
-        emoji: i.emoji,
-        categoria: i.categoria,
-        vendidos: 0,
-        receita: 0,
-        custo: 0,
-      }
+      const l = linha(i.produtoId, i)
       l.vendidos += i.qtd
       l.receita += i.preco * i.qtd
       l.custo += i.custo * i.qtd
-      linhas.set(i.produtoId, l)
+      for (const e of i.escolhas ?? []) {
+        const q = e.qtd * i.qtd
+        if (e.categoria === 'espeto') espetosVendidos += q
+        const le = linha(e.produtoId, { nome: e.nome, categoria: e.categoria, emoji: produtos.find((x) => x.id === e.produtoId)?.emoji ?? '' })
+        le.vendidos += q
+        le.emCombos += q
+      }
     }
   }
 
-  // produtos com estoque no dia aparecem mesmo sem venda
-  for (const [produtoId, qtd] of Object.entries(caixa.estoque)) {
-    const prod = produtos.find((x) => x.id === produtoId)
-    if (!linhas.has(produtoId) && prod) {
-      linhas.set(produtoId, {
-        produtoId,
-        nome: prod.nome,
-        emoji: prod.emoji,
-        categoria: prod.categoria,
-        vendidos: 0,
-        receita: 0,
-        custo: 0,
-      })
+  function linha(produtoId: string, base: { nome: string; categoria: Categoria; emoji: string }) {
+    let l = linhas.get(produtoId)
+    if (!l) {
+      l = { produtoId, nome: base.nome, emoji: base.emoji, categoria: base.categoria, vendidos: 0, emCombos: 0, entradas: 0, receita: 0, custo: 0 }
+      linhas.set(produtoId, l)
     }
-    const l = linhas.get(produtoId)
-    if (l) {
-      l.estoque = qtd
-      l.restante = qtd - l.vendidos
-    }
+    return l
   }
+
+  // estoque: abertura, entradas no período e fechamento
+  const fim = caixa.fechadoEm ?? '9999'
+  const noPeriodo = movEstoque.filter((m) => m.criadoEm >= caixa.abertoEm && m.criadoEm <= fim)
+  const controlados = new Set([
+    ...Object.keys(caixa.estoque),
+    ...Object.keys(caixa.estoqueFinal ?? {}),
+    ...(caixa.fechadoEm ? [] : produtos.filter((p) => p.estoque !== undefined).map((p) => p.id)),
+  ])
+  for (const id of controlados) {
+    const prod = produtos.find((x) => x.id === id)
+    if (!prod && !linhas.has(id)) continue
+    const l = linha(id, prod ?? { nome: '?', categoria: 'outro', emoji: '' })
+    l.inicial = caixa.estoque[id]
+    l.final = caixa.fechadoEm ? caixa.estoqueFinal?.[id] : prod?.estoque
+    l.entradas = noPeriodo.filter((m) => m.produtoId === id).reduce((s, m) => s + m.qtd, 0)
+  }
+  const compras = noPeriodo.filter((m) => m.tipo === 'compra').reduce((s, m) => s + (m.valor ?? 0), 0)
 
   const soma = (tipo: string, origem?: string) =>
     caixa.movimentos
@@ -277,7 +367,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
 
   const lucroBruto = faturamento - cmv
   const lucroLiquido = faturamento - taxas - cmv - despesas
-  const ordemCat: Record<Categoria, number> = { espeto: 0, outro: 1, bebida: 2 }
+  const ordemCat: Record<Categoria, number> = { espeto: 0, combo: 1, outro: 2, bebida: 3 }
   const ordemProd = (id: string) => {
     const i = produtos.findIndex((p) => p.id === id)
     return i < 0 ? 999 : i
@@ -310,6 +400,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     porProduto: [...linhas.values()].sort(
       (a, b) => ordemCat[a.categoria] - ordemCat[b.categoria] || ordemProd(a.produtoId) - ordemProd(b.produtoId),
     ),
+    compras,
   }
 }
 

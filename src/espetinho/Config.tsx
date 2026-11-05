@@ -92,8 +92,9 @@ export default function ConfigTela({ dados }: { dados: Dados }) {
           <ol className="mt-2 list-decimal space-y-1 pl-5">
             <li>Instale o driver da Waytech no Windows e deixe ela como <b>impressora padrão</b>.</li>
             <li>
-              Nas preferências da impressora (Painel de Controle → Impressoras → Waytech → Preferências), escolha o papel <b>80 mm (ou 58 mm) × rolo</b> e ative o
-              corte automático, se tiver.
+              Nas preferências da impressora (Painel de Controle → Impressoras → Waytech → Preferências de impressão → Avançado/Configurações do papel), escolha
+              o papel <b>80 mm</b> e deixe o <b>corte automático “ao fim de cada página”</b> (às vezes aparece como “Cut per page” / “Corte por página”). O sistema
+              manda cada via como uma página do tamanho exato do conteúdo — a via da churrasqueira sai cortada separada da via do cliente.
             </li>
             <li>
               Na primeira impressão pelo Chrome: destino <b>Waytech</b>, margens <b>Nenhuma</b>, escala <b>100%</b>, e desmarque “Cabeçalhos e rodapés”. O

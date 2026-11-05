@@ -84,7 +84,8 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
           <thead>
             <tr className="border-b-2 border-stone-200 text-left text-stone-600">
               <th className="py-1">Produto</th>
-              <th className="py-1 text-right">Preparado</th>
+              <th className="py-1 text-right">Início</th>
+              <th className="py-1 text-right">Entrou</th>
               <th className="py-1 text-right">Vendido</th>
               <th className="py-1 text-right">Sobrou</th>
               <th className="py-1 text-right">Receita</th>
@@ -98,9 +99,13 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
                 <td className="py-1.5">
                   {l.emoji} {l.nome}
                 </td>
-                <td className="text-right">{l.estoque ?? '—'}</td>
-                <td className="text-right font-bold">{l.vendidos}</td>
-                <td className={`text-right ${l.restante && l.restante > 0 ? 'font-bold text-amber-700' : ''}`}>{l.restante ?? '—'}</td>
+                <td className="text-right">{l.inicial ?? '—'}</td>
+                <td className="text-right">{l.final !== undefined ? (l.entradas > 0 ? `+${l.entradas}` : l.entradas || '—') : '—'}</td>
+                <td className="text-right font-bold">
+                  {l.vendidos}
+                  {l.emCombos > 0 && <span className="block text-xs font-normal text-rose-700">{l.emCombos} em combos</span>}
+                </td>
+                <td className={`text-right ${l.final && l.final > 0 ? 'font-bold text-amber-700' : ''}`}>{l.final ?? '—'}</td>
                 <td className="text-right">{brl(l.receita)}</td>
                 <td className="text-right">{brl(l.custo)}</td>
                 <td className="text-right font-semibold">{brl(l.receita - l.custo)}</td>
@@ -108,7 +113,10 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-stone-500">“Sobrou” = preparado − vendido. Use para planejar o próximo dia e controlar perdas.</p>
+        <p className="mt-2 text-xs text-stone-500">
+          “Entrou” = espetos montados/compras/contagens durante o caixa. A receita de combos aparece na linha do combo; os espetos dentro deles contam no
+          “Vendido” de cada espeto.
+        </p>
       </section>
 
       {caixa.movimentos.length > 0 && (
@@ -138,16 +146,19 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
 }
 
 export default function Relatorios({ dados }: { dados: Dados }) {
-  const { caixas, pedidos, produtos } = dados
+  const { caixas, pedidos, produtos, movEstoque } = dados
   const ordenados = caixas.slice().sort((a, b) => b.abertoEm.localeCompare(a.abertoEm))
   const [selId, setSelId] = useState<string | null>(ordenados[0]?.id ?? null)
   const hoje = new Date()
   const [mes, setMes] = useState(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`)
 
   const sel = caixas.find((c) => c.id === selId)
-  const resumos = ordenados.map((c) => ({ c, r: resumirCaixa(c, pedidos, produtos) }))
+  const resumos = ordenados.map((c) => ({ c, r: resumirCaixa(c, pedidos, produtos, movEstoque) }))
   const doMes = resumos.filter(({ c }) => c.abertoEm.slice(0, 7) === mes)
   const soma = (f: (r: Resumo) => number) => doMes.reduce((s, x) => s + f(x.r), 0)
+  const comprasMes = movEstoque.filter((m) => m.tipo === 'compra' && m.criadoEm.slice(0, 7) === mes)
+  const totalCompras = comprasMes.reduce((s, m) => s + (m.valor ?? 0), 0)
+  const perdasMes = movEstoque.filter((m) => m.tipo === 'contagem' && m.qtd < 0 && m.criadoEm.slice(0, 7) === mes)
 
   if (!caixas.length) return <p className="mt-16 text-center text-stone-600">Ainda não há caixas. Os relatórios aparecem depois de abrir e fechar o primeiro caixa.</p>
 
@@ -164,6 +175,39 @@ export default function Relatorios({ dados }: { dados: Dados }) {
           <Cartao titulo="Espetos vendidos" valor={soma((r) => r.espetosVendidos)} cor="laranja" />
           <Cartao titulo="Custos + despesas" valor={brl(soma((r) => r.cmv + r.taxas + r.despesas))} />
           <Cartao titulo="Lucro" valor={brl(soma((r) => r.lucroLiquido))} cor={soma((r) => r.lucroLiquido) >= 0 ? 'verde' : 'vermelho'} />
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl bg-stone-50 p-3 text-sm">
+            <div className="font-bold">Compras de carne/insumos/bebidas no mês: {brl(totalCompras)}</div>
+            <p className="text-stone-600">Dinheiro gasto para repor estoque. O lucro acima usa o custo do que foi vendido (o que sobrou no estoque ainda vale dinheiro).</p>
+            {comprasMes.length > 0 && (
+              <ul className="mt-1 text-stone-700">
+                {Object.entries(
+                  comprasMes.reduce<Record<string, { qtd: number; valor: number; unidade: string }>>((acc, m) => {
+                    const a = (acc[m.nome] ??= { qtd: 0, valor: 0, unidade: m.unidade })
+                    a.qtd += m.qtd
+                    a.valor += m.valor ?? 0
+                    return acc
+                  }, {}),
+                ).map(([nome, a]) => (
+                  <li key={nome}>
+                    {nome}: {a.qtd.toLocaleString('pt-BR')} {a.unidade} · {brl(a.valor)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="rounded-xl bg-stone-50 p-3 text-sm">
+            <div className="font-bold">Perdas registradas na contagem: {perdasMes.length}</div>
+            <ul className="mt-1 text-stone-700">
+              {perdasMes.map((m) => (
+                <li key={m.id}>
+                  {data(m.criadoEm)} · {m.nome}: {(-m.qtd).toLocaleString('pt-BR')} {m.unidade}
+                  {m.obs ? ` (${m.obs})` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
 
@@ -196,7 +240,7 @@ export default function Relatorios({ dados }: { dados: Dados }) {
             ))}
           </ul>
         </aside>
-        <div className="min-w-0 flex-1">{sel && <RelatorioCaixa caixa={sel} r={resumirCaixa(sel, pedidos, produtos)} dados={dados} />}</div>
+        <div className="min-w-0 flex-1">{sel && <RelatorioCaixa caixa={sel} r={resumirCaixa(sel, pedidos, produtos, movEstoque)} dados={dados} />}</div>
       </div>
     </div>
   )

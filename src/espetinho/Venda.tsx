@@ -1,19 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  CATEGORIAS,
   EMOJI_FORMA,
   FORMAS,
   NOMES_CATEGORIA,
   NOMES_FORMA,
   arred,
   brl,
-  custoProduto,
+  consumoDosItens,
+  custoCompleto,
+  moverEstoqueProdutos,
   novoId,
   taxaDaForma,
-  vendidosPorProduto,
   type Dados,
 } from './dados'
 import { imprimirPedido } from './impressao'
-import type { Categoria, Pagamento, Pedido, Produto } from './tipos'
+import type { Categoria, Escolha, Pagamento, Pedido, Produto } from './tipos'
 import { CampoNumero, Imagem, Modal, btn } from './ui'
 
 interface Linha {
@@ -21,12 +23,15 @@ interface Linha {
   produtoId: string
   qtd: number
   obs: string
+  escolhas?: Escolha[]
 }
+
+const chaveEscolhas = (e?: Escolha[]) => (e ?? []).map((x) => `${x.produtoId}:${x.qtd}`).sort().join('|')
 
 type Filtro = 'todos' | Categoria
 
 export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa') => void }) {
-  const { produtos, insumos, pedidos, setPedidos, caixaAberto, config } = dados
+  const { produtos, setProdutos, insumos, pedidos, setPedidos, caixaAberto, config } = dados
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [cliente, setCliente] = useState('')
   const [viagem, setViagem] = useState(false)
@@ -34,6 +39,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
   const [pagando, setPagando] = useState(false)
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
+  const [montandoCombo, setMontandoCombo] = useState<Produto | null>(null)
 
   useEffect(() => {
     if (!ultimo) return
@@ -43,29 +49,55 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
 
   const ativos = produtos.filter((p) => p.ativo)
   const visiveis = filtro === 'todos' ? ativos : ativos.filter((p) => p.categoria === filtro)
-  const categorias = (['espeto', 'bebida', 'outro'] as Categoria[]).filter((c) => ativos.some((p) => p.categoria === c))
+  const categorias = CATEGORIAS.filter((c) => ativos.some((p) => p.categoria === c))
 
-  const vendidos = useMemo(
-    () => (caixaAberto ? vendidosPorProduto(pedidos.filter((p) => p.caixaId === caixaAberto.id)) : {}),
-    [pedidos, caixaAberto],
-  )
-  const noCarrinho = (id: string) => linhas.filter((l) => l.produtoId === id).reduce((s, l) => s + l.qtd, 0)
+  const consumoCarrinho = useMemo(() => consumoDosItens(linhas), [linhas])
+  const noCarrinhoDireto = (id: string) => linhas.filter((l) => l.produtoId === id).reduce((s, l) => s + l.qtd, 0)
+  /** Quanto ainda pode vender (estoque − o que já está no carrinho). undefined = sem controle. */
   const restante = (id: string) => {
-    const est = caixaAberto?.estoque[id]
-    return est === undefined ? undefined : est - (vendidos[id] ?? 0) - noCarrinho(id)
+    const est = produtos.find((p) => p.id === id)?.estoque
+    return est === undefined ? undefined : est - (consumoCarrinho[id] ?? 0)
+  }
+  /** Combo esgotado quando algum componente não tem opções suficientes. */
+  const comboDisponivel = (p: Produto) =>
+    (p.componentes ?? []).every((c) => {
+      let livre = 0
+      for (const id of c.opcoes) {
+        const r = restante(id)
+        if (r === undefined) return true
+        livre += Math.max(0, r)
+      }
+      return livre >= c.qtd
+    })
+  const restanteBotao = (p: Produto) => {
+    if (p.componentes?.length && !comboDisponivel(p)) return 0
+    return restante(p.id)
   }
 
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
   const subtotal = arred(linhas.reduce((s, l) => s + (prodPorId(l.produtoId)?.preco ?? 0) * l.qtd, 0))
   const qtdItens = linhas.reduce((s, l) => s + l.qtd, 0)
 
-  function adicionar(p: Produto) {
-    const r = restante(p.id)
+  function adicionar(p: Produto, escolhas?: Escolha[]) {
+    const r = restanteBotao(p)
     if (r !== undefined && r <= 0) return
+    if (p.componentes?.length && !escolhas) {
+      // componentes com uma opção só já entram sozinhos; com várias, pergunta
+      if (p.componentes.every((c) => c.opcoes.length === 1)) {
+        escolhas = p.componentes.map((c) => {
+          const x = produtos.find((y) => y.id === c.opcoes[0])
+          return { produtoId: c.opcoes[0], nome: x?.nome ?? '?', categoria: x?.categoria ?? 'outro', qtd: c.qtd }
+        })
+      } else {
+        setMontandoCombo(p)
+        return
+      }
+    }
+    const chave = chaveEscolhas(escolhas)
     setLinhas((ls) => {
-      const ultima = [...ls].reverse().find((l) => l.produtoId === p.id && !l.obs)
+      const ultima = [...ls].reverse().find((l) => l.produtoId === p.id && !l.obs && chaveEscolhas(l.escolhas) === chave)
       if (ultima) return ls.map((l) => (l.id === ultima.id ? { ...l, qtd: l.qtd + 1 } : l))
-      return [...ls, { id: novoId(), produtoId: p.id, qtd: 1, obs: '' }]
+      return [...ls, { id: novoId(), produtoId: p.id, qtd: 1, obs: '', escolhas }]
     })
   }
 
@@ -73,8 +105,11 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     const linha = linhas.find((l) => l.id === id)
     if (!linha) return
     if (delta > 0) {
-      const r = restante(linha.produtoId)
-      if (r !== undefined && r <= 0) return
+      const precisa = consumoDosItens([{ ...linha, qtd: 1 }])
+      if (Object.entries(precisa).some(([pid, q]) => {
+        const r = restante(pid)
+        return r !== undefined && r < q
+      })) return
     }
     setLinhas((ls) => ls.map((l) => (l.id === id ? { ...l, qtd: l.qtd + delta } : l)).filter((l) => l.qtd > 0))
   }
@@ -109,9 +144,10 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
           categoria: p.categoria,
           emoji: p.emoji,
           preco: p.preco,
-          custo: arred(custoProduto(p, insumos)),
+          custo: arred(custoCompleto(p, insumos, produtos, l.escolhas)),
           qtd: l.qtd,
           obs: l.obs,
+          ...(l.escolhas?.length ? { escolhas: l.escolhas } : {}),
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
@@ -138,6 +174,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
       entregue: false,
     }
     setPedidos((ps) => [...ps, pedido])
+    setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
     if (config.imprimirAoFinalizar) imprimirPedido(pedido, config)
     setUltimo(pedido)
     setPagando(false)
@@ -177,11 +214,17 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
         )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {visiveis.map((p) => {
-            const r = restante(p.id)
+            const r = restanteBotao(p)
             const esgotado = r !== undefined && r <= 0
-            const qtd = noCarrinho(p.id)
+            const qtd = noCarrinhoDireto(p.id)
             const cor =
-              p.categoria === 'espeto' ? 'border-orange-300' : p.categoria === 'bebida' ? 'border-sky-300' : 'border-amber-300'
+              p.categoria === 'espeto'
+                ? 'border-orange-300'
+                : p.categoria === 'combo'
+                  ? 'border-rose-300'
+                  : p.categoria === 'bebida'
+                    ? 'border-sky-300'
+                    : 'border-amber-300'
             return (
               <button
                 key={p.id}
@@ -257,6 +300,9 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
                   <Imagem emoji={p.emoji} imagem={p.imagem} className="h-10 w-10 shrink-0 rounded-lg text-2xl" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-bold">{p.nome}</div>
+                    {l.escolhas && p.componentes?.some((c) => c.opcoes.length > 1) && (
+                      <div className="text-sm font-semibold text-rose-700">{l.escolhas.map((e) => `${e.qtd}x ${e.nome}`).join(' + ')}</div>
+                    )}
                     <div className="text-sm text-stone-500">
                       {brl(p.preco)} · <span className="font-semibold text-stone-800">{brl(p.preco * l.qtd)}</span>
                     </div>
@@ -331,6 +377,19 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
             Finalizar
           </button>
         </div>
+      )}
+
+      {montandoCombo && (
+        <ModalCombo
+          combo={montandoCombo}
+          produtos={produtos}
+          restante={restante}
+          aoFechar={() => setMontandoCombo(null)}
+          aoConfirmar={(esc) => {
+            adicionar(montandoCombo, esc)
+            setMontandoCombo(null)
+          }}
+        />
       )}
 
       {pagando && (
@@ -498,6 +557,112 @@ function ModalPagamento({
           {pagamentos.length ? `✔ Confirmar ${brl(total)}` : 'Escolha a forma de pagamento'}
         </button>
       </div>
+    </Modal>
+  )
+}
+
+function ModalCombo({
+  combo,
+  produtos,
+  restante,
+  aoFechar,
+  aoConfirmar,
+}: {
+  combo: Produto
+  produtos: Produto[]
+  restante: (id: string) => number | undefined
+  aoFechar: () => void
+  aoConfirmar: (escolhas: Escolha[]) => void
+}) {
+  const comps = combo.componentes ?? []
+  // escolhas[componenteId][produtoId] = qtd
+  const [sel, setSel] = useState<Record<string, Record<string, number>>>(() =>
+    Object.fromEntries(comps.map((c) => [c.id, c.opcoes.length === 1 ? { [c.opcoes[0]]: c.qtd } : {}])),
+  )
+  const totalComp = (cid: string) => Object.values(sel[cid] ?? {}).reduce((s, q) => s + q, 0)
+  const usadoNoModal = (pid: string) => Object.values(sel).reduce((s, m) => s + (m[pid] ?? 0), 0)
+  const completo = comps.every((c) => totalComp(c.id) === c.qtd)
+
+  function tocar(cid: string, pid: string, max: number) {
+    const r = restante(pid)
+    if (r !== undefined && r - usadoNoModal(pid) <= 0) return
+    setSel((s) => {
+      const atual = { ...(s[cid] ?? {}) }
+      if (max === 1) return { ...s, [cid]: { [pid]: 1 } }
+      if (Object.values(atual).reduce((a, b) => a + b, 0) >= max) return s
+      atual[pid] = (atual[pid] ?? 0) + 1
+      return { ...s, [cid]: atual }
+    })
+  }
+
+  function confirmar() {
+    const m = new Map<string, number>()
+    for (const c of comps) for (const [pid, q] of Object.entries(sel[c.id] ?? {})) if (q > 0) m.set(pid, (m.get(pid) ?? 0) + q)
+    aoConfirmar(
+      [...m.entries()].map(([pid, qtd]) => {
+        const p = produtos.find((x) => x.id === pid)
+        return { produtoId: pid, nome: p?.nome ?? '?', categoria: p?.categoria ?? 'outro', qtd }
+      }),
+    )
+  }
+
+  return (
+    <Modal titulo={`${combo.emoji} ${combo.nome}`} aberto aoFechar={aoFechar}>
+      <div className="space-y-5">
+        {comps.map((c) => {
+          const tot = totalComp(c.id)
+          return (
+            <div key={c.id}>
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-lg font-extrabold">
+                  Escolha {c.qtd} {c.nome.toLowerCase()}
+                  {c.qtd > 1 ? 's' : ''}{' '}
+                  <span className={tot === c.qtd ? 'text-emerald-600' : 'text-stone-400'}>
+                    ({tot}/{c.qtd})
+                  </span>
+                </h3>
+                {tot > 0 && c.opcoes.length > 1 && (
+                  <button className="text-sm font-semibold text-red-600" onClick={() => setSel((s) => ({ ...s, [c.id]: {} }))}>
+                    limpar
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {c.opcoes.map((pid) => {
+                  const p = produtos.find((x) => x.id === pid)
+                  if (!p) return null
+                  const q = sel[c.id]?.[pid] ?? 0
+                  const r = restante(pid)
+                  const livre = r === undefined ? undefined : r - usadoNoModal(pid)
+                  const acabou = livre !== undefined && livre <= 0 && q === 0
+                  return (
+                    <button
+                      key={pid}
+                      disabled={acabou}
+                      onClick={() => tocar(c.id, pid, c.qtd)}
+                      className={`relative flex items-center gap-2 rounded-xl border-4 p-2 text-left font-bold ${q ? 'border-emerald-600 bg-emerald-50' : 'border-stone-200 bg-white'} ${acabou ? 'opacity-40' : ''}`}
+                    >
+                      <Imagem emoji={p.emoji} imagem={p.imagem} className="h-10 w-10 shrink-0 rounded-lg text-3xl" />
+                      <span className="leading-tight">
+                        {p.nome}
+                        {livre !== undefined && <span className="block text-xs font-semibold text-stone-500">{acabou ? 'esgotado' : `resta ${Math.max(0, livre)}`}</span>}
+                      </span>
+                      {q > 0 && (
+                        <span className="absolute -right-2 -top-2 flex h-7 min-w-7 items-center justify-center rounded-full bg-emerald-600 px-1.5 text-sm font-black text-white">
+                          {q}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <button className={`${btn.verde} mt-5 w-full py-4 text-lg`} disabled={!completo} onClick={confirmar}>
+        Adicionar ao pedido
+      </button>
     </Modal>
   )
 }

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import {
+  CATEGORIAS,
   NOMES_CATEGORIA,
   NOMES_UNIDADE,
   arred,
   brl,
+  custoCompleto,
   custoItemFicha,
   custoProduto,
   custoUnitarioInsumo,
@@ -13,10 +15,10 @@ import {
   unidadeFicha,
   type Dados,
 } from './dados'
-import type { Categoria, Insumo, Produto, Unidade } from './tipos'
+import type { Insumo, Produto, Unidade } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 
-const EMOJIS = ['🍢', '🥩', '🍗', '🌭', '🧀', '❤️', '🧅', '🫑', '🍖', '🥓', '🍤', '🧄', '🍞', '🥣', '🍚', '🥗', '🥤', '🍺', '💧', '🧃', '🍹', '🍫', '🍬', '⭐']
+const EMOJIS = ['🍛', '🍱', '🍢', '🥩', '🍗', '🌭', '🧀', '❤️', '🧅', '🫑', '🍖', '🥓', '🍤', '🧄', '🍞', '🥣', '🍚', '🥗', '🥤', '🍺', '💧', '🧃', '🍹', '🍫', '🍬', '⭐']
 
 export default function Cadastros({ dados }: { dados: Dados }) {
   const [aba, setAba] = useState<'produtos' | 'insumos'>('produtos')
@@ -129,7 +131,7 @@ function Produtos({ dados }: { dados: Dados }) {
         <button
           className={btn.primario}
           onClick={() =>
-            setEditando({ id: novoId(), nome: '', categoria: 'espeto', preco: 0, emoji: '🍢', ficha: [], custoDireto: 0, ativo: true })
+            setEditando({ id: novoId(), nome: '', categoria: 'espeto', preco: 0, emoji: '🍢', ficha: [], custoDireto: 0, ativo: true, estoque: 0 })
           }
         >
           + Novo produto
@@ -149,7 +151,7 @@ function Produtos({ dados }: { dados: Dados }) {
           </thead>
           <tbody>
             {produtos.map((p, idx) => {
-              const custo = custoProduto(p, insumos)
+              const custo = custoCompleto(p, insumos, produtos)
               const lucro = p.preco - custo
               const margem = p.preco > 0 ? (lucro / p.preco) * 100 : 0
               return (
@@ -161,6 +163,8 @@ function Produtos({ dados }: { dados: Dados }) {
                         <div className="font-bold">{p.nome}</div>
                         <div className="text-xs text-stone-500">
                           {NOMES_CATEGORIA[p.categoria]}
+                          {p.estoque !== undefined && ` · estoque ${p.estoque}`}
+                          {p.componentes?.length ? ` · ${p.componentes.map((c) => `${c.qtd} ${c.nome.toLowerCase()}`).join(' + ')}` : ''}
                           {!p.ativo && ' · inativo'}
                         </div>
                       </div>
@@ -193,6 +197,7 @@ function Produtos({ dados }: { dados: Dados }) {
         <EditorProduto
           inicial={editando}
           insumos={insumos}
+          produtos={produtos}
           novo={!produtos.some((p) => p.id === editando.id)}
           aoFechar={() => setEditando(null)}
           aoSalvar={salvar}
@@ -209,6 +214,7 @@ function Produtos({ dados }: { dados: Dados }) {
 function EditorProduto({
   inicial,
   insumos,
+  produtos,
   novo,
   aoFechar,
   aoSalvar,
@@ -216,6 +222,7 @@ function EditorProduto({
 }: {
   inicial: Produto
   insumos: Insumo[]
+  produtos: Produto[]
   novo: boolean
   aoFechar: () => void
   aoSalvar: (p: Produto) => void
@@ -225,7 +232,11 @@ function EditorProduto({
   const [margemAlvo, setMargemAlvo] = useState(60)
   const [erroFoto, setErroFoto] = useState('')
   const set = (m: Partial<Produto>) => setP((x) => ({ ...x, ...m }))
-  const custo = custoProduto(p, insumos)
+  const custo = custoCompleto(p, insumos, produtos)
+  const custoProprio = custoProduto(p, insumos)
+  const opcoesCombo = produtos.filter((x) => x.id !== p.id && x.categoria !== 'combo')
+  const comps = p.componentes ?? []
+  const setComps = (c: NonNullable<Produto['componentes']>) => set({ componentes: c })
   const lucro = p.preco - custo
   const margem = p.preco > 0 ? (lucro / p.preco) * 100 : 0
   const sugerido = margemAlvo < 100 ? Math.ceil((custo / (1 - margemAlvo / 100)) * 2) / 2 : 0
@@ -270,12 +281,18 @@ function EditorProduto({
 
         <div className="space-y-4">
           <CampoTexto rotulo="Nome no botão" valor={p.nome} aoMudar={(v) => set({ nome: v })} placeholder="Ex.: Carne" />
-          <div className="grid grid-cols-3 gap-2">
-            {(['espeto', 'bebida', 'outro'] as Categoria[]).map((c) => (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {CATEGORIAS.map((c) => (
               <button
                 key={c}
-                onClick={() => set({ categoria: c })}
-                className={`rounded-xl py-2 font-bold ${p.categoria === c ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}
+                onClick={() =>
+                  set(
+                    c === 'combo'
+                      ? { categoria: c, estoque: undefined, componentes: p.componentes?.length ? p.componentes : [{ id: novoId(), nome: 'Espeto', qtd: 1, opcoes: [] }] }
+                      : { categoria: c, componentes: undefined },
+                  )
+                }
+                className={`rounded-xl px-1 py-2 text-sm font-bold ${p.categoria === c ? 'bg-stone-900 text-white' : 'bg-stone-100 text-stone-700'}`}
               >
                 {NOMES_CATEGORIA[c]}
               </button>
@@ -283,8 +300,55 @@ function EditorProduto({
           </div>
           <CampoNumero rotulo="Preço de venda" prefixo="R$" grande valor={p.preco} aoMudar={(v) => set({ preco: v })} />
 
+          {p.categoria === 'combo' && (
+            <div className="rounded-xl border-2 border-rose-200 bg-rose-50/40 p-3">
+              <div className="font-extrabold">O que vem no combo/jantinha</div>
+              <p className="text-xs text-stone-500">
+                Marque as opções que o cliente pode escolher. Com uma opção só, entra direto. Os espetos escolhidos saem do estoque de espetos prontos.
+              </p>
+              <ul className="mt-2 space-y-3">
+                {comps.map((c, idx) => (
+                  <li key={c.id} className="rounded-lg bg-white p-2">
+                    <div className="grid grid-cols-[1fr_6rem_auto] items-end gap-2">
+                      <CampoTexto
+                        rotulo="Item"
+                        valor={c.nome}
+                        aoMudar={(v) => setComps(comps.map((x, i) => (i === idx ? { ...x, nome: v } : x)))}
+                        placeholder="Espeto, Refri…"
+                      />
+                      <CampoNumero rotulo="Qtd" valor={c.qtd} aoMudar={(v) => setComps(comps.map((x, i) => (i === idx ? { ...x, qtd: Math.max(1, Math.round(v)) } : x)))} />
+                      <button className="pb-2 text-xl text-stone-400 hover:text-red-600" onClick={() => setComps(comps.filter((_, i) => i !== idx))}>
+                        ×
+                      </button>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {opcoesCombo.map((o) => {
+                        const marcado = c.opcoes.includes(o.id)
+                        return (
+                          <button
+                            key={o.id}
+                            onClick={() =>
+                              setComps(comps.map((x, i) => (i === idx ? { ...x, opcoes: marcado ? x.opcoes.filter((y) => y !== o.id) : [...x.opcoes, o.id] } : x)))
+                            }
+                            className={`rounded-full px-2.5 py-1 text-sm font-semibold ${marcado ? 'bg-rose-600 text-white' : 'bg-stone-100 text-stone-700'}`}
+                          >
+                            {o.emoji} {o.nome}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {c.opcoes.length === 0 && <p className="mt-1 text-xs font-semibold text-red-600">Marque pelo menos uma opção.</p>}
+                  </li>
+                ))}
+              </ul>
+              <button className="mt-2 text-sm font-bold text-rose-700" onClick={() => setComps([...comps, { id: novoId(), nome: 'Refri', qtd: 1, opcoes: [] }])}>
+                + adicionar item ao combo
+              </button>
+            </div>
+          )}
+
           <div className="rounded-xl border-2 border-stone-200 p-3">
-            <div className="font-extrabold">Ficha técnica — o que vai em 1 unidade</div>
+            <div className="font-extrabold">{p.categoria === 'combo' ? 'Acompanhamentos (baião, vinagrete…) — por unidade' : 'Ficha técnica — o que vai em 1 unidade'}</div>
             <p className="text-xs text-stone-500">Ex.: 1 espeto de carne = 100 g de carne + 1 palito + 3 g de tempero.</p>
             <ul className="mt-2 space-y-2">
               {p.ficha.map((f, idx) => {
@@ -335,6 +399,11 @@ function EditorProduto({
             />
           </div>
 
+          {p.categoria === 'combo' && (
+            <p className="text-xs text-stone-500">
+              Custo = acompanhamentos {brl(custoProprio)} + itens do combo (pela opção mais cara: {brl(custo - custoProprio)}). Na venda é usado o custo real da escolha.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-2 text-center">
             <div className="rounded-xl bg-stone-100 p-2">
               <div className="text-xs text-stone-600">Custo</div>
@@ -363,6 +432,17 @@ function EditorProduto({
             <input type="checkbox" className="h-5 w-5 accent-orange-600" checked={p.ativo} onChange={(e) => set({ ativo: e.target.checked })} />
             Aparece na tela de venda
           </label>
+          {p.categoria !== 'combo' && (
+            <label className="flex items-center gap-2 font-semibold">
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-orange-600"
+                checked={p.estoque !== undefined}
+                onChange={(e) => set({ estoque: e.target.checked ? (inicial.estoque ?? 0) : undefined })}
+              />
+              Controlar estoque (contar unidades prontas e bloquear quando acabar)
+            </label>
+          )}
         </div>
       </div>
 
@@ -378,7 +458,11 @@ function EditorProduto({
           <button className={btn.secundario} onClick={aoFechar}>
             Cancelar
           </button>
-          <button className={btn.primario} disabled={!p.nome.trim()} onClick={() => aoSalvar({ ...p, nome: p.nome.trim() })}>
+          <button
+            className={btn.primario}
+            disabled={!p.nome.trim() || (p.categoria === 'combo' && (!comps.length || comps.some((c) => !c.opcoes.length)))}
+            onClick={() => aoSalvar({ ...p, nome: p.nome.trim() })}
+          >
             Salvar
           </button>
         </div>

@@ -3,15 +3,17 @@ import Cadastros from './Cadastros'
 import CaixaTela from './Caixa'
 import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
+import Estoque from './Estoque'
 import Painel from './Painel'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
 
-type Aba = 'venda' | 'painel' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
+type Aba = 'venda' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
 
 const ABAS: { id: Aba; nome: string; icone: string }[] = [
   { id: 'venda', nome: 'Vender', icone: '🛒' },
   { id: 'painel', nome: 'Painel', icone: '📊' },
+  { id: 'estoque', nome: 'Estoque', icone: '📦' },
   { id: 'caixa', nome: 'Caixa', icone: '💰' },
   { id: 'relatorios', nome: 'Relatórios', icone: '📈' },
   { id: 'cadastros', nome: 'Cadastros', icone: '🍢' },
@@ -32,7 +34,7 @@ export default function Espetinho() {
     }
   }, [dados.config.nomeLoja])
 
-  const r = dados.caixaAberto ? resumirCaixa(dados.caixaAberto, dados.pedidos, dados.produtos) : null
+  const r = dados.caixaAberto ? resumirCaixa(dados.caixaAberto, dados.pedidos, dados.produtos, dados.movEstoque) : null
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900">
@@ -71,6 +73,7 @@ export default function Espetinho() {
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
         {aba === 'venda' && <Venda dados={dados} irPara={setAba} />}
         {aba === 'painel' && <Painel dados={dados} irPara={setAba} />}
+        {aba === 'estoque' && <Estoque dados={dados} />}
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={setAba} />}
         {aba === 'relatorios' && <Relatorios dados={dados} />}
         {aba === 'cadastros' && <Cadastros dados={dados} />}

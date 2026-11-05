@@ -11,14 +11,17 @@ const TIPOS: { tipo: TipoMovimento; nome: string; ajuda: string }[] = [
   { tipo: 'suprimento', nome: '⬇️ Reforço', ajuda: 'Colocou mais troco na gaveta. Não mexe no lucro.' },
 ]
 
-export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (aba: 'venda') => void }) {
-  const { caixaAberto, caixas, setCaixas, produtos, pedidos, config } = dados
+const fotoEstoque = (produtos: { id: string; estoque?: number }[]) =>
+  Object.fromEntries(produtos.filter((p) => p.estoque !== undefined).map((p) => [p.id, p.estoque!]))
+
+export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (aba: 'venda' | 'estoque') => void }) {
+  const { caixaAberto, caixas, setCaixas, produtos, pedidos, config, movEstoque } = dados
   const [fechadoAgora, setFechadoAgora] = useState<string | null>(null)
 
   if (fechadoAgora) {
     const c = caixas.find((x) => x.id === fechadoAgora)
     if (c) {
-      const r = resumirCaixa(c, pedidos, produtos)
+      const r = resumirCaixa(c, pedidos, produtos, movEstoque)
       return (
         <div className="space-y-4">
           <div className="rounded-2xl bg-emerald-600 p-4 text-white">
@@ -34,9 +37,9 @@ export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (ab
     }
   }
 
-  if (!caixaAberto) return <AbrirCaixa dados={dados} aoAbrir={() => irPara('venda')} />
+  if (!caixaAberto) return <AbrirCaixa dados={dados} aoAbrir={() => irPara('venda')} irEstoque={() => irPara('estoque')} />
 
-  const r = resumirCaixa(caixaAberto, pedidos, produtos)
+  const r = resumirCaixa(caixaAberto, pedidos, produtos, movEstoque)
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -60,9 +63,15 @@ export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (ab
       <FecharCaixa
         esperado={r.dinheiroEsperado}
         aoFechar={(contado, obs, imprimir) => {
-          const fechado = { ...caixaAberto, fechadoEm: new Date().toISOString(), dinheiroContado: contado, observacao: obs }
+          const fechado = {
+            ...caixaAberto,
+            fechadoEm: new Date().toISOString(),
+            dinheiroContado: contado,
+            observacao: obs,
+            estoqueFinal: fotoEstoque(produtos),
+          }
           setCaixas((cs) => cs.map((c) => (c.id === caixaAberto.id ? fechado : c)))
-          if (imprimir) imprimirRelatorio(fechado, resumirCaixa(fechado, pedidos, produtos), config)
+          if (imprimir) imprimirRelatorio(fechado, resumirCaixa(fechado, pedidos, produtos, movEstoque), config)
           setFechadoAgora(caixaAberto.id)
         }}
         pendentes={pedidos.filter((p) => p.caixaId === caixaAberto.id && !p.entregue && !p.cancelado).length}
@@ -71,22 +80,13 @@ export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (ab
   )
 }
 
-function AbrirCaixa({ dados, aoAbrir }: { dados: Dados; aoAbrir: () => void }) {
+function AbrirCaixa({ dados, aoAbrir, irEstoque }: { dados: Dados; aoAbrir: () => void; irEstoque: () => void }) {
   const { caixas, setCaixas, produtos } = dados
   const anterior = caixas.slice().sort((a, b) => b.abertoEm.localeCompare(a.abertoEm))[0]
-  const ativos = produtos.filter((p) => p.ativo)
   const [troco, setTroco] = useState(anterior?.trocoInicial ?? 50)
-  const [estoque, setEstoque] = useState<Record<string, number>>(() => {
-    const e: Record<string, number> = {}
-    for (const p of ativos) {
-      const ant = anterior?.estoque[p.id]
-      if (ant) e[p.id] = ant
-    }
-    return e
-  })
+  const controlados = produtos.filter((p) => p.ativo && p.estoque !== undefined)
 
   function abrir() {
-    const est = Object.fromEntries(Object.entries(estoque).filter(([, v]) => v > 0))
     setCaixas((cs) => [
       ...cs,
       {
@@ -94,7 +94,7 @@ function AbrirCaixa({ dados, aoAbrir }: { dados: Dados; aoAbrir: () => void }) {
         numero: cs.reduce((m, c) => Math.max(m, c.numero), 0) + 1,
         abertoEm: new Date().toISOString(),
         trocoInicial: troco,
-        estoque: est,
+        estoque: fotoEstoque(produtos),
         movimentos: [],
       },
     ])
@@ -105,25 +105,29 @@ function AbrirCaixa({ dados, aoAbrir }: { dados: Dados; aoAbrir: () => void }) {
     <div className="mx-auto max-w-2xl space-y-4">
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-xl font-extrabold">Abrir caixa</h2>
-        <p className="text-sm text-stone-600">Comece o dia informando o troco que está na gaveta e quanto você preparou.</p>
+        <p className="text-sm text-stone-600">Comece o dia informando o troco que está na gaveta.</p>
         <CampoNumero className="mt-4" rotulo="Troco inicial na gaveta" prefixo="R$" grande valor={troco} aoMudar={setTroco} />
       </section>
 
-      <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
-        <h3 className="font-extrabold">Quantos preparou hoje?</h3>
-        <p className="text-sm text-stone-600">
-          Serve para o painel mostrar quantos ainda faltam vender. Deixe em branco o que não quer controlar (ex.: bebidas). Dá para repor durante o dia.
-        </p>
-        <ul className="mt-3 divide-y divide-stone-100">
-          {ativos.map((p) => (
-            <li key={p.id} className="flex items-center gap-3 py-2">
-              <Imagem emoji={p.emoji} imagem={p.imagem} className="h-10 w-10 shrink-0 rounded-lg text-2xl" />
-              <span className="flex-1 font-semibold">{p.nome}</span>
-              <CampoNumero className="w-28" sufixo="un" valor={estoque[p.id] ?? 0} aoMudar={(v) => setEstoque((e) => ({ ...e, [p.id]: Math.round(v) }))} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      {controlados.length > 0 && (
+        <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="font-extrabold">Estoque pronto para vender</h3>
+            <button className="text-sm font-bold text-orange-700" onClick={irEstoque}>
+              Montar espetos / lançar compra →
+            </button>
+          </div>
+          <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {controlados.map((p) => (
+              <li key={p.id} className={`flex items-center gap-2 rounded-xl p-2 ${(p.estoque ?? 0) <= 0 ? 'bg-red-50' : 'bg-stone-50'}`}>
+                <Imagem emoji={p.emoji} imagem={p.imagem} className="h-8 w-8 shrink-0 rounded text-2xl" />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">{p.nome}</span>
+                <b className={(p.estoque ?? 0) <= 0 ? 'text-red-600' : ''}>{p.estoque}</b>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <button className={`${btn.primario} w-full py-4 text-xl`} onClick={abrir}>
         Abrir caixa e começar a vender

@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { NOMES_FORMA, brl, hora, pct, resumirCaixa, type Dados } from './dados'
+import { NOMES_FORMA, brl, consumoDosItens, hora, moverEstoqueProdutos, pct, resumirCaixa, type Dados } from './dados'
 import { imprimirPedido } from './impressao'
-import { CampoNumero, Cartao, Modal, btn } from './ui'
+import type { Pedido } from './tipos'
+import { Cartao, btn } from './ui'
 
-export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa') => void }) {
-  const { caixaAberto, pedidos, setPedidos, produtos, setCaixas, config } = dados
-  const [repor, setRepor] = useState<{ produtoId: string; nome: string } | null>(null)
-  const [qtdRepor, setQtdRepor] = useState(0)
+export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa' | 'estoque') => void }) {
+  const { caixaAberto, pedidos, setPedidos, produtos, setProdutos, movEstoque, config } = dados
   const [verTodos, setVerTodos] = useState(false)
 
   if (!caixaAberto) {
@@ -20,37 +19,32 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
     )
   }
 
-  const r = resumirCaixa(caixaAberto, pedidos, produtos)
+  const r = resumirCaixa(caixaAberto, pedidos, produtos, movEstoque)
   const doCaixa = pedidos.filter((p) => p.caixaId === caixaAberto.id).slice().reverse()
   const naFila = doCaixa.filter((p) => !p.entregue && !p.cancelado)
   const lista = verTodos ? doCaixa : doCaixa.slice(0, 15)
-  const comEstoque = r.porProduto.filter((l) => l.estoque !== undefined)
-  const totalEstoque = comEstoque.reduce((s, l) => s + (l.estoque ?? 0), 0)
-  const totalRestante = comEstoque.reduce((s, l) => s + Math.max(0, l.restante ?? 0), 0)
+  const espetosProntos = produtos.filter((p) => p.categoria === 'espeto' && p.estoque !== undefined)
+  const totalProntos = espetosProntos.reduce((s, p) => s + Math.max(0, p.estoque ?? 0), 0)
+  const linhas = r.porProduto.filter((l) => l.vendidos > 0 || l.final !== undefined)
 
-  const atualizar = (id: string, mudanca: Partial<(typeof pedidos)[number]>) =>
-    setPedidos((ps) => ps.map((p) => (p.id === id ? { ...p, ...mudanca } : p)))
+  const atualizar = (id: string, mudanca: Partial<Pedido>) => setPedidos((ps) => ps.map((p) => (p.id === id ? { ...p, ...mudanca } : p)))
 
-  function confirmarRepor() {
-    if (!repor) return
-    setCaixas((cs) =>
-      cs.map((c) =>
-        c.id === caixaAberto!.id ? { ...c, estoque: { ...c.estoque, [repor.produtoId]: (c.estoque[repor.produtoId] ?? 0) + qtdRepor } } : c,
-      ),
-    )
-    setRepor(null)
-    setQtdRepor(0)
+  function cancelar(p: Pedido) {
+    if (!confirm(`Cancelar o pedido Nº ${p.numero}? Ele sai do faturamento e os itens voltam para o estoque.`)) return
+    atualizar(p.id, { cancelado: true })
+    setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(p.itens), 1))
   }
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Cartao titulo="Faturamento" valor={brl(r.faturamento)} detalhe={`${r.qtdPedidos} pedidos · ticket ${brl(r.ticketMedio)}`} cor="azul" />
-        <Cartao titulo="Espetos vendidos" valor={r.espetosVendidos} detalhe={`${r.itensVendidos} itens no total`} cor="laranja" />
+        <Cartao titulo="Espetos vendidos" valor={r.espetosVendidos} detalhe="avulsos + dentro de combos/jantinhas" cor="laranja" />
         <Cartao
-          titulo="Restam (do que preparou)"
-          valor={comEstoque.length ? totalRestante : '—'}
-          detalhe={comEstoque.length ? `de ${totalEstoque} preparados` : 'sem controle de estoque'}
+          titulo="Espetos prontos restantes"
+          valor={espetosProntos.length ? totalProntos : '—'}
+          detalhe={espetosProntos.length ? 'montados e ainda não vendidos' : 'sem controle de estoque'}
+          cor={espetosProntos.length && totalProntos <= config.alertaEstoque ? 'vermelho' : 'stone'}
         />
         <Cartao
           titulo="Lucro até agora"
@@ -62,33 +56,36 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
-          <h2 className="mb-3 text-lg font-extrabold">Vendidos × restantes</h2>
-          {r.porProduto.length === 0 && <p className="text-stone-500">Nenhuma venda ainda.</p>}
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-extrabold">Vendidos × restantes</h2>
+            <button className="text-sm font-bold text-orange-700" onClick={() => irPara('estoque')}>
+              + montar / repor
+            </button>
+          </div>
+          {linhas.length === 0 && <p className="text-stone-500">Nenhuma venda ainda.</p>}
           <ul className="space-y-3">
-            {r.porProduto.map((l) => {
-              const prop = l.estoque ? Math.min(100, (l.vendidos / l.estoque) * 100) : 0
-              const pouco = l.restante !== undefined && l.restante <= config.alertaEstoque
+            {linhas.map((l) => {
+              const disponivel = (l.final ?? 0) + l.vendidos
+              const prop = l.final !== undefined && disponivel > 0 ? Math.min(100, (l.vendidos / disponivel) * 100) : 0
+              const pouco = l.final !== undefined && l.final <= config.alertaEstoque
               return (
                 <li key={l.produtoId}>
                   <div className="flex items-center gap-2">
                     <span className="text-2xl">{l.emoji}</span>
-                    <span className="flex-1 font-bold">{l.nome}</span>
+                    <span className="flex-1 font-bold">
+                      {l.nome}
+                      {l.emCombos > 0 && <span className="block text-xs font-semibold text-rose-700">{l.emCombos} em combos/jantinhas</span>}
+                    </span>
                     <span className="text-sm text-stone-600">
                       vendeu <b className="text-lg text-stone-900">{l.vendidos}</b>
                     </span>
-                    {l.restante !== undefined && (
+                    {l.final !== undefined && (
                       <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${pouco ? 'bg-red-600 text-white' : 'bg-emerald-100 text-emerald-800'}`}>
-                        {l.restante <= 0 ? 'acabou' : `restam ${l.restante}`}
+                        {l.final <= 0 ? 'acabou' : `restam ${l.final}`}
                       </span>
                     )}
-                    <button
-                      className="rounded-lg px-2 py-1 text-sm font-semibold text-orange-700 hover:bg-orange-50"
-                      onClick={() => setRepor({ produtoId: l.produtoId, nome: l.nome })}
-                    >
-                      + repor
-                    </button>
                   </div>
-                  {l.estoque !== undefined && (
+                  {l.final !== undefined && (
                     <div className="mt-1 h-2.5 overflow-hidden rounded-full bg-stone-100">
                       <div className={`h-full ${pouco ? 'bg-red-500' : 'bg-orange-500'}`} style={{ width: `${prop}%` }} />
                     </div>
@@ -97,20 +94,6 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
               )
             })}
           </ul>
-          {produtos.some((p) => p.ativo && caixaAberto.estoque[p.id] === undefined && !r.porProduto.some((l) => l.produtoId === p.id)) && (
-            <details className="mt-4 text-sm">
-              <summary className="cursor-pointer font-semibold text-stone-600">Controlar estoque de outro produto</summary>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {produtos
-                  .filter((p) => p.ativo && caixaAberto.estoque[p.id] === undefined && !r.porProduto.some((l) => l.produtoId === p.id))
-                  .map((p) => (
-                    <button key={p.id} className={btn.secundario} onClick={() => setRepor({ produtoId: p.id, nome: p.nome })}>
-                      {p.emoji} {p.nome}
-                    </button>
-                  ))}
-              </div>
-            </details>
-          )}
         </section>
 
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
@@ -171,7 +154,9 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
                   )}
                 </div>
                 <div className="truncate text-sm text-stone-600">
-                  {p.itens.map((i) => `${i.qtd}x ${i.nome}${i.obs ? ` (${i.obs})` : ''}`).join(' · ')}
+                  {p.itens
+                    .map((i) => `${i.qtd}x ${i.nome}${i.escolhas?.length ? ` [${i.escolhas.map((e) => `${e.qtd}x ${e.nome}`).join(', ')}]` : ''}${i.obs ? ` (${i.obs})` : ''}`)
+                    .join(' · ')}
                 </div>
                 <div className="text-sm">
                   <b>{brl(p.total)}</b> · {p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}
@@ -189,7 +174,7 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
                 {!p.cancelado && (
                   <button
                     className={btn.perigo}
-                    onClick={() => confirm(`Cancelar o pedido Nº ${p.numero}? Ele sai do faturamento e o estoque volta.`) && atualizar(p.id, { cancelado: true })}
+                    onClick={() => cancelar(p)}
                   >
                     Cancelar
                   </button>
@@ -205,20 +190,6 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
         )}
       </section>
 
-      <Modal titulo={`Repor estoque — ${repor?.nome ?? ''}`} aberto={!!repor} aoFechar={() => setRepor(null)}>
-        <p className="mb-3 text-stone-600">Quantas unidades a mais você preparou?</p>
-        <CampoNumero grande autoFocus valor={qtdRepor} aoMudar={(v) => setQtdRepor(Math.round(v))} sufixo="un" />
-        <div className="mt-3 flex gap-2">
-          {[5, 10, 20, 50].map((n) => (
-            <button key={n} className={btn.secundario} onClick={() => setQtdRepor(n)}>
-              {n}
-            </button>
-          ))}
-        </div>
-        <button className={`${btn.primario} mt-4 w-full`} disabled={qtdRepor <= 0} onClick={confirmarRepor}>
-          Adicionar ao estoque
-        </button>
-      </Modal>
     </div>
   )
 }

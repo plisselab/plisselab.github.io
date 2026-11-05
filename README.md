@@ -8,18 +8,19 @@
 
 Código em `src/espetinho/`. Tudo fica salvo no navegador do aparelho (use **Config → Baixar backup** com frequência).
 
-- **Vender**: botões grandes com foto/emoji de cada espeto, bebida e acompanhamento. Um toque adiciona; `+`/`−` ajustam; “+ observação” tem atalhos (bem passado, sem sal…). Marcação **Comer aqui / Para viagem**, nome do cliente, pagamento em dinheiro (com troco), Pix, débito, crédito ou dividido, e desconto.
-- **Cupom**: ao confirmar, imprime a **via da churrasqueira** (nº do pedido enorme, PARA VIAGEM em tarja preta, itens e observações em letra grande, sem preços) e a **via do cliente** (preços, pagamento, troco, “não é documento fiscal”). Papel 58 ou 80 mm.
-- **Painel**: faturamento, espetos vendidos, quantos restam do que foi preparado (com alerta de estoque baixo e “repor”), lucro até agora, totais por forma de pagamento e fila de pedidos (entregue / reimprimir / cancelar).
-- **Caixa**: abrir com troco inicial e quantidade preparada de cada produto; lançar despesas do dia (carvão, gelo…), retiradas e reforços; fechar contando o dinheiro (mostra se sobrou ou faltou).
-- **Relatórios**: por caixa e resumo do mês — quanto em dinheiro, quanto em conta (já sem taxa da maquininha), custo dos produtos, despesas e **lucro**. Pode imprimir na térmica.
+- **Vender**: botões grandes com foto/emoji de cada espeto, combo/jantinha, bebida e acompanhamento. Combos e jantinhas abrem a escolha do espeto (e do refri) na hora. Um toque adiciona; `+`/`−` ajustam; “+ observação” tem atalhos (bem passado, sem sal…). Marcação **Comer aqui / Para viagem**, nome do cliente, pagamento em dinheiro (com troco), Pix, débito, crédito ou dividido, e desconto.
+- **Cupom**: ao confirmar, imprime a **via da churrasqueira** (nº do pedido enorme, PARA VIAGEM em tarja preta, itens, espetos de dentro dos combos e observações em letra grande, quadro “PRA BRASA” com o total por tipo de espeto, sem preços) e a **via do cliente** (preços, pagamento, troco, “não é documento fiscal”). Papel 58 ou 80 mm.
+- **Estoque**: a carne entra em **kg** quando chega (“Chegou compra”, com valor pago → custo médio atualizado). Em **“Montar espetos”** você informa quantos espetos saíram e quantos kg usou: baixa os kg, soma os espetos prontos e mostra o rendimento real (g por espeto) com opção de corrigir a ficha. Vendas (inclusive dentro de combos) baixam os espetos prontos; cancelamento devolve. “Contagem” corrige diferenças e registra perdas.
+- **Painel**: faturamento, espetos vendidos (avulsos + em combos), espetos prontos restantes (com alerta de estoque baixo), lucro até agora, totais por forma de pagamento e fila de pedidos (entregue / reimprimir / cancelar).
+- **Caixa**: abrir com troco inicial (o estoque da abertura e do fechamento é registrado sozinho); lançar despesas do dia (carvão, gelo…), retiradas e reforços; fechar contando o dinheiro (mostra se sobrou ou faltou).
+- **Relatórios**: por caixa (início / entrou / vendido / sobrou de cada espeto) e resumo do mês, com compras de carne/insumos e perdas — quanto em dinheiro, quanto em conta (já sem taxa da maquininha), custo dos produtos, despesas e **lucro**. Pode imprimir na térmica.
 - **Cadastros**: insumos (quanto pagou ÷ quanto veio = custo por kg/unidade) e produtos com **ficha técnica** (ex.: 100 g de carne + 1 palito + 3 g de tempero). O custo, lucro por unidade, margem e preço sugerido são calculados sozinhos.
 
 **Lucro** = faturamento − custo dos insumos dos itens vendidos − taxas da maquininha − despesas do dia.
 
 ### Impressora térmica (Waytech)
 
-1. Instale o driver no Windows e deixe a Waytech como impressora padrão, com papel de rolo 80 mm (ou 58 mm).
+1. Instale o driver no Windows e deixe a Waytech como impressora padrão, com papel 80 mm e **corte automático ao fim de cada página**. Cada via é enviada como uma página do tamanho exato do conteúdo, então cada via sai cortada separada.
 2. Na primeira impressão pelo Chrome: destino Waytech, margens “Nenhuma”, escala 100%, sem cabeçalhos/rodapés.
 3. Para imprimir direto, sem a janela de impressão, abra o Chrome com `--kiosk-printing` no atalho.
 4. Use **Config → Imprimir teste** para conferir.

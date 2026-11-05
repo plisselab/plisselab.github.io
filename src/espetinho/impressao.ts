@@ -1,4 +1,4 @@
-import { NOMES_FORMA, brl, data, hora, type Resumo } from './dados'
+import { NOMES_FORMA, brl, data, espetosParaBrasa, hora, type Resumo } from './dados'
 import type { Caixa, Config, Pedido } from './tipos'
 
 const esc = (s: string) =>
@@ -14,12 +14,11 @@ function estilo(config: Config) {
   const largura = config.larguraPapel === 58 ? 48 : 72
   const base = config.larguraPapel === 58 ? 12 : 14
   return `
-  @page { size: ${config.larguraPapel}mm auto; margin: 0; }
   * { box-sizing: border-box; color: #000 !important; }
   html, body { margin: 0; padding: 0; background: #fff; }
-  body { width: ${largura}mm; margin: 0 auto; padding: 2mm 0 6mm; font-family: Arial, Helvetica, sans-serif;
+  body { width: ${largura}mm; margin: 0 auto; padding: 0; font-family: Arial, Helvetica, sans-serif;
          font-size: ${base}px; line-height: 1.25; font-weight: 600; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .via { page-break-after: always; break-after: page; }
+  .via { page-break-after: always; break-after: page; padding: 2mm 0 5mm; overflow: hidden; }
   .via:last-child { page-break-after: auto; break-after: auto; }
   .c { text-align: center; }
   .loja { font-size: ${base + 4}px; font-weight: 900; text-align: center; text-transform: uppercase; }
@@ -45,6 +44,10 @@ function estilo(config: Config) {
   .linha td { font-size: ${base}px; }
   .grande { font-size: ${base + 4}px; font-weight: 900; }
   .rodape { text-align: center; font-size: ${base - 1}px; margin-top: 2mm; }
+  .sub td { font-size: ${base + 4}px; font-weight: 900; padding-left: 0; }
+  .brasa { border: 3px solid #000; padding: 1.5mm 2mm; margin-top: 2mm; }
+  .brasa .t { font-size: ${base + 2}px; font-weight: 900; text-align: center; letter-spacing: 1px; }
+  .brasa td { font-size: ${base + 6}px; font-weight: 900; }
   `
 }
 
@@ -61,10 +64,13 @@ const blocoViagem = (p: Pedido) =>
 function viaChurrasqueira(p: Pedido) {
   const grupos: { titulo: string; itens: Pedido['itens'] }[] = [
     { titulo: 'Espetos', itens: p.itens.filter((i) => i.categoria === 'espeto') },
+    { titulo: 'Combos e jantinhas', itens: p.itens.filter((i) => i.categoria === 'combo') },
     { titulo: 'Acompanhamentos', itens: p.itens.filter((i) => i.categoria === 'outro') },
     { titulo: 'Bebidas', itens: p.itens.filter((i) => i.categoria === 'bebida') },
   ].filter((g) => g.itens.length)
-  const totalEspetos = p.itens.filter((i) => i.categoria === 'espeto').reduce((s, i) => s + i.qtd, 0)
+  const brasa = espetosParaBrasa(p.itens)
+  const totalEspetos = brasa.reduce((s, e) => s + e.qtd, 0)
+  const temCombo = p.itens.some((i) => i.escolhas?.length)
 
   return `<div class="via">
     <div class="tag">VIA DA CHURRASQUEIRA</div>
@@ -78,13 +84,23 @@ function viaChurrasqueira(p: Pedido) {
       <table>${g.itens
         .map(
           (i) => `<tr class="item"><td class="q">${i.qtd}x</td><td>${esc(i.nome.toUpperCase())}</td></tr>
+          ${(i.escolhas ?? [])
+            .map((e) => `<tr class="sub"><td></td><td>+ ${e.qtd * i.qtd} ${esc(e.nome.toUpperCase())}</td></tr>`)
+            .join('')}
           ${i.obs ? `<tr class="obs"><td class="seta r">&gt;&gt;</td><td>${esc(i.obs.toUpperCase())}</td></tr>` : ''}`,
         )
         .join('')}</table>`,
       )
       .join('')}
-    <hr class="forte">
-    ${totalEspetos ? `<div class="c grande">TOTAL DE ESPETOS: ${totalEspetos}</div>` : ''}
+    ${
+      totalEspetos && (temCombo || brasa.length > 1)
+        ? `<div class="brasa"><div class="t">PRA BRASA: ${totalEspetos} ESPETO${totalEspetos > 1 ? 'S' : ''}</div><table>${brasa
+            .map((e) => `<tr><td class="q" style="width:1%;padding-right:2mm">${e.qtd}</td><td>${esc(e.nome.toUpperCase())}</td></tr>`)
+            .join('')}</table></div>`
+        : totalEspetos
+          ? `<hr class="forte"><div class="c grande">TOTAL DE ESPETOS: ${totalEspetos}</div>`
+          : ''
+    }
   </div>`
 }
 
@@ -101,7 +117,7 @@ function viaCliente(p: Pedido, config: Config) {
     <table>
       ${p.itens
         .map(
-          (i) => `<tr class="linha"><td>${i.qtd}x ${esc(i.nome)}${i.obs ? `<br><span class="peq">&gt; ${esc(i.obs)}</span>` : ''}</td>
+          (i) => `<tr class="linha"><td>${i.qtd}x ${esc(i.nome)}${i.escolhas?.length ? `<br><span class="peq">(${i.escolhas.map((e) => `${e.qtd * i.qtd} ${esc(e.nome)}`).join(', ')})</span>` : ''}${i.obs ? `<br><span class="peq">&gt; ${esc(i.obs)}</span>` : ''}</td>
           <td class="r">${brl(i.preco * i.qtd)}</td></tr>`,
         )
         .join('')}
@@ -120,6 +136,10 @@ function viaCliente(p: Pedido, config: Config) {
   </div>`
 }
 
+/**
+ * Cada via vira uma página com a altura exata do conteúdo. Com o corte automático da Waytech
+ * configurado para cortar ao fim de cada página, cada via sai cortada separada e sem papel em branco.
+ */
 function imprimirHTML(corpo: string, config: Config) {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('aria-hidden', 'true')
@@ -131,14 +151,31 @@ function imprimirHTML(corpo: string, config: Config) {
     `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cupom</title><style>${estilo(config)}</style></head><body>${corpo}</body></html>`,
   )
   doc.close()
+
+  const paginar = () => {
+    const pxParaMm = 25.4 / 96
+    const vias = [...doc.querySelectorAll<HTMLElement>('.via')]
+    const alturas = vias.map((v) => Math.ceil(v.getBoundingClientRect().height * pxParaMm) + 2)
+    const regras = alturas
+      .map((h, i) => `@page via${i} { size: ${config.larguraPapel}mm ${h}mm; margin: 0; } .via[data-pg="${i}"] { page: via${i}; }`)
+      .join('\n')
+    vias.forEach((v, i) => v.setAttribute('data-pg', String(i)))
+    const st = doc.createElement('style')
+    st.textContent = `@page { size: ${config.larguraPapel}mm ${Math.max(...alturas, 50)}mm; margin: 0; }\n${regras}`
+    doc.head.appendChild(st)
+  }
+
   const remover = () => setTimeout(() => iframe.remove(), 1000)
   iframe.contentWindow!.addEventListener('afterprint', remover)
-  setTimeout(() => {
+  const imprimir = () => {
+    paginar()
     iframe.contentWindow!.focus()
     iframe.contentWindow!.print()
     // alguns navegadores não disparam afterprint
     setTimeout(() => iframe.isConnected && iframe.remove(), 60000)
-  }, 150)
+  }
+  // espera as fontes para medir a altura certa
+  ;(doc.fonts?.ready ?? Promise.resolve()).then(() => setTimeout(imprimir, 50))
 }
 
 export function imprimirPedido(p: Pedido, config: Config, vias?: { churrasqueira: boolean; cliente: boolean }) {
@@ -203,9 +240,8 @@ export function imprimirRelatorio(caixa: Caixa, r: Resumo, config: Config) {
     <hr class="forte"><div class="sec">Produtos (vendido / sobrou)</div>
     <table>
       ${r.porProduto
-        .map((l) =>
-          linha(`${l.vendidos}x ${esc(l.nome)}`, l.restante !== undefined ? `sobrou ${l.restante}` : brl(l.receita)),
-        )
+        .filter((l) => l.vendidos > 0 || l.final !== undefined)
+        .map((l) => linha(`${l.vendidos}x ${esc(l.nome)}`, l.final !== undefined ? `sobrou ${l.final}` : brl(l.receita)))
         .join('')}
     </table>
     ${

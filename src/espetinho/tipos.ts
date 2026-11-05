@@ -9,14 +9,26 @@ export interface Insumo {
   precoCompra: number
   /** Quanto veio na compra, na unidade do insumo (ex.: 5 kg, 100 un). */
   qtdCompra: number
+  /** Quanto tem guardado, na unidade do insumo (ex.: 12,5 kg). Sem valor = não controla. */
+  estoque?: number
 }
 
-export type Categoria = 'espeto' | 'bebida' | 'outro'
+export type Categoria = 'espeto' | 'combo' | 'bebida' | 'outro'
 
 /** Quanto de um insumo vai em 1 unidade do produto. Em gramas se o insumo é kg, em ml se é L. */
 export interface ItemFicha {
   insumoId: string
   qtd: number
+}
+
+/** Parte de um combo/jantinha. Com mais de uma opção, o caixa escolhe na hora da venda. */
+export interface Componente {
+  id: string
+  /** Ex.: "Espeto", "Refri". */
+  nome: string
+  qtd: number
+  /** Produtos que podem ser escolhidos. */
+  opcoes: string[]
 }
 
 export interface Produto {
@@ -33,6 +45,10 @@ export interface Produto {
   /** Custo que não vem de insumo (ex.: refri comprado pronto, embalagem). */
   custoDireto: number
   ativo: boolean
+  /** Unidades prontas (espetos montados, latas na geladeira). Sem valor = não controla. */
+  estoque?: number
+  /** Só para combos/jantinhas. */
+  componentes?: Componente[]
 }
 
 export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito'
@@ -53,6 +69,15 @@ export interface ItemPedido {
   custo: number
   qtd: number
   obs: string
+  /** Combo: produtos escolhidos para 1 unidade do combo. */
+  escolhas?: Escolha[]
+}
+
+export interface Escolha {
+  produtoId: string
+  nome: string
+  categoria: Categoria
+  qtd: number
 }
 
 export interface Pedido {
@@ -96,8 +121,10 @@ export interface Caixa {
   fechadoEm?: string
   /** Dinheiro na gaveta ao abrir (troco). */
   trocoInicial: number
-  /** Quantas unidades de cada produto foram preparadas/levadas para o dia. Sem valor = sem controle. */
+  /** Estoque de cada produto controlado na abertura do caixa. */
   estoque: Record<string, number>
+  /** Estoque de cada produto controlado no fechamento. */
+  estoqueFinal?: Record<string, number>
   movimentos: Movimento[]
   /** Dinheiro contado na gaveta ao fechar. */
   dinheiroContado?: number
@@ -121,4 +148,26 @@ export interface Config {
   obsRapidas: string[]
   /** Avisar quando restarem esta quantidade ou menos. */
   alertaEstoque: number
+}
+
+export type TipoMovEstoque = 'compra' | 'montagem' | 'contagem'
+
+/** Histórico de estoque: compras que chegaram, espetos montados e contagens/perdas. */
+export interface MovEstoque {
+  id: string
+  criadoEm: string
+  tipo: TipoMovEstoque
+  /** Insumo que entrou (compra) ou foi contado. */
+  insumoId?: string
+  /** Produto montado, comprado pronto (bebida) ou contado. */
+  produtoId?: string
+  nome: string
+  /** Quantidade que entrou (+) ou saiu (−), na unidade do insumo ou em unidades do produto. */
+  qtd: number
+  unidade: string
+  /** Valor pago (compras). */
+  valor?: number
+  /** Montagem: insumos usados. */
+  consumo?: { insumoId: string; nome: string; qtd: number; unidade: string }[]
+  obs?: string
 }
