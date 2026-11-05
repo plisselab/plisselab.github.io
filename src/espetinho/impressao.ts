@@ -78,6 +78,7 @@ function viaChurrasqueira(p: Pedido) {
     <div class="c">${hora(p.criadoEm)} · ${data(p.criadoEm)}</div>
     ${blocoViagem(p)}
     ${p.cliente ? `<div class="cliente">${esc(p.cliente)}</div>` : ''}
+    ${p.viagem && p.embalagens?.length ? `<div class="c grande">EMBALAR: ${p.embalagens.map((e) => `${e.qtd} ${esc(e.nome.toUpperCase())}`).join(' + ')}</div>` : ''}
     ${grupos
       .map(
         (g) => `<hr class="forte"><div class="sec">${g.titulo}</div>
@@ -235,6 +236,7 @@ export function imprimirRelatorio(caixa: Caixa, r: Resumo, config: Config) {
       ${linha('- Custo dos produtos', brl(r.cmv))}
       ${linha('- Taxas maquininha', brl(r.taxas))}
       ${linha('- Despesas do dia', brl(r.despesas))}
+      ${r.embalagens.map((e) => linha(`(inclui ${e.qtd} ${esc(e.nome.toLowerCase())})`, brl(e.custo))).join('')}
       ${linha('LUCRO', brl(r.lucroLiquido), 'tot')}
     </table>
     <hr class="forte"><div class="sec">Produtos (vendido / sobrou)</div>

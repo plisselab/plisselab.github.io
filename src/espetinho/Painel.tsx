@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NOMES_FORMA, brl, consumoDosItens, consumoInsumosDosItens, hora, moverEstoqueInsumos, moverEstoqueProdutos, pct, resumirCaixa, rendePara, type Dados } from './dados'
+import { NOMES_FORMA, brl, comEmbalagens, consumoDosItens, consumoInsumosDosItens, hora, moverEstoqueInsumos, moverEstoqueProdutos, pct, resumirCaixa, rendePara, type Dados } from './dados'
 import { imprimirPedido } from './impressao'
 import type { Pedido } from './tipos'
 import { Cartao, btn } from './ui'
@@ -37,7 +37,7 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
   function cancelar(p: Pedido) {
     if (!confirm(`Cancelar o pedido Nº ${p.numero}? Ele sai do faturamento e os itens voltam para o estoque.`)) return
     atualizar(p.id, { cancelado: true })
-    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(p.itens, produtos, insumos), 1))
+    setInsumos((is) => moverEstoqueInsumos(is, comEmbalagens(consumoInsumosDosItens(p.itens, produtos, insumos), p.embalagens), 1))
     setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(p.itens), 1))
   }
 

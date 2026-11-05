@@ -41,6 +41,11 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
           <h3 className="mb-2 font-extrabold">Lucro</h3>
           <Linha rotulo="Faturamento" valor={brl(r.faturamento)} />
           <Linha rotulo="− Custo dos produtos (insumos)" valor={brl(r.cmv)} neg />
+          {r.embalagens.map((e) => (
+            <p key={e.nome} className="-mt-1 pb-1 pl-3 text-xs text-stone-500">
+              inclui {e.qtd} {e.nome.toLowerCase()} = {brl(e.custo)}
+            </p>
+          ))}
           <Linha rotulo="− Taxas da maquininha" valor={brl(r.taxas)} neg />
           <Linha rotulo="− Despesas do dia" valor={brl(r.despesas)} neg />
           <Linha rotulo="= Lucro" valor={brl(r.lucroLiquido)} forte />

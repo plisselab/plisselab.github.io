@@ -109,6 +109,66 @@ export default function ConfigTela({ dados }: { dados: Dados }) {
       </section>
 
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
+        <h2 className="text-lg font-extrabold">Embalagem para viagem</h2>
+        <p className="text-sm text-stone-600">
+          Entra sozinha em todo pedido marcado “Para viagem” (dá para ajustar no pedido com + e −). O custo sai do lucro e, se o insumo tiver estoque
+          controlado, baixa do estoque.
+        </p>
+        <ul className="mt-3 space-y-2">
+          {config.regrasViagem.map((r, idx) => {
+            const mudar = (m: Partial<(typeof config.regrasViagem)[number]>) =>
+              set({ regrasViagem: config.regrasViagem.map((x, i) => (i === idx ? { ...x, ...m } : x)) })
+            return (
+              <li key={idx} className="grid grid-cols-2 items-end gap-2 rounded-xl border-2 border-stone-100 p-2 sm:grid-cols-[2fr_1fr_1fr_auto]">
+                <label className="col-span-2 block sm:col-span-1">
+                  <span className="mb-1 block text-sm font-semibold text-stone-600">Insumo</span>
+                  <select
+                    className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2"
+                    value={r.insumoId}
+                    onChange={(e) => mudar({ insumoId: e.target.value })}
+                  >
+                    {!dados.insumos.some((i) => i.id === r.insumoId) && <option value={r.insumoId}>(insumo excluído)</option>}
+                    {dados.insumos.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.nome}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <CampoNumero rotulo="Por pedido" valor={r.porPedido} aoMudar={(v) => mudar({ porPedido: Math.round(v) })} />
+                <CampoNumero rotulo="+1 a cada N espetos" valor={r.aCadaEspetos} aoMudar={(v) => mudar({ aCadaEspetos: Math.round(v) })} />
+                <button
+                  className="pb-2 text-2xl text-stone-400 hover:text-red-600"
+                  onClick={() => set({ regrasViagem: config.regrasViagem.filter((_, i) => i !== idx) })}
+                  aria-label="Remover"
+                >
+                  ×
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        <p className="mt-2 text-xs text-stone-500">
+          Ex.: 1 por pedido e +1 a cada 10 espetos → até 10 espetos = 1 saquinho; 11 a 20 = 2 saquinhos. Use 0 em “a cada N” para não aumentar.
+        </p>
+        {dados.insumos.length > 0 && (
+          <button
+            className={btn.secundario + ' mt-2'}
+            onClick={() =>
+              set({
+                regrasViagem: [
+                  ...config.regrasViagem,
+                  { insumoId: (dados.insumos.find((i) => i.grupo === 'Embalagens') ?? dados.insumos[0]).id, porPedido: 1, aCadaEspetos: 0 },
+                ],
+              })
+            }
+          >
+            + Adicionar embalagem
+          </button>
+        )}
+      </section>
+
+      <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">Taxas da maquininha</h2>
         <p className="text-sm text-stone-600">Descontadas do valor “em conta” e do lucro.</p>
         <div className="mt-3 grid grid-cols-3 gap-3">

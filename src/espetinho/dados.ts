@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocalStorage } from '../hooks/useLocalStorage'
-import type { Caixa, Categoria, Config, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
+import type { Caixa, Categoria, Config, EmbalagemPedido, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
 
 export const novoId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -118,6 +118,35 @@ export function rendePara(insumo: Insumo, produtos: Produto[], estoque = insumo.
     })
 }
 
+/** Embalagens sugeridas para um pedido para viagem, pelas regras da configuração. */
+export function embalagensSugeridas(itens: ItemPedido[] | Pick<ItemPedido, 'categoria' | 'qtd' | 'escolhas'>[], config: Config, insumos: Insumo[]) {
+  const espetos = itens.reduce(
+    (s, i) => s + (i.categoria === 'espeto' ? i.qtd : 0) + (i.escolhas ?? []).reduce((t, e) => t + (e.categoria === 'espeto' ? e.qtd * i.qtd : 0), 0),
+    0,
+  )
+  const m: Record<string, number> = {}
+  for (const r of config.regrasViagem) {
+    if (!insumos.some((i) => i.id === r.insumoId)) continue
+    const extra = r.aCadaEspetos > 0 ? Math.floor(Math.max(0, espetos - 1) / r.aCadaEspetos) : 0
+    m[r.insumoId] = (m[r.insumoId] ?? 0) + r.porPedido + extra
+  }
+  return m
+}
+
+export function montarEmbalagens(qtds: Record<string, number>, insumos: Insumo[]): EmbalagemPedido[] {
+  return Object.entries(qtds).flatMap(([insumoId, qtd]) => {
+    const ins = insumos.find((i) => i.id === insumoId)
+    return ins && qtd > 0 ? [{ insumoId, nome: ins.nome, qtd, custo: arred(custoUnitarioInsumo(ins) * 1000) / 1000 }] : []
+  })
+}
+
+/** Soma ao consumo de insumos as embalagens do pedido (para baixar/devolver estoque). */
+export function comEmbalagens(consumo: Record<string, number>, embalagens?: EmbalagemPedido[]) {
+  const m = { ...consumo }
+  for (const e of embalagens ?? []) m[e.insumoId] = (m[e.insumoId] ?? 0) + e.qtd
+  return m
+}
+
 export function moverEstoqueProdutos(produtos: Produto[], consumo: Record<string, number>, sinal: 1 | -1) {
   return produtos.map((p) =>
     p.estoque !== undefined && consumo[p.id] ? { ...p, estoque: p.estoque + sinal * consumo[p.id] } : p,
@@ -136,20 +165,31 @@ export function espetosParaBrasa(itens: ItemPedido[]) {
 
 // ---------- dados iniciais (exemplo, pode editar tudo) ----------
 
+const SAQUINHO_TERMICO: Insumo = {
+  id: 'ins-saquinho',
+  nome: 'Saquinho térmico',
+  unidade: 'un',
+  precoCompra: 30,
+  qtdCompra: 100,
+  estoque: 0,
+  grupo: 'Embalagens',
+}
+
 const INSUMOS_INICIAIS: Insumo[] = [
-  { id: 'ins-carne', nome: 'Carne bovina (alcatra/miolo)', unidade: 'kg', precoCompra: 45, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-frango', nome: 'Frango (peito/sobrecoxa)', unidade: 'kg', precoCompra: 22, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-linguica', nome: 'Linguiça toscana', unidade: 'kg', precoCompra: 25, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-coracao', nome: 'Coração de frango', unidade: 'kg', precoCompra: 30, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-queijo', nome: 'Queijo coalho', unidade: 'kg', precoCompra: 50, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-palito', nome: 'Palito de bambu', unidade: 'un', precoCompra: 12, qtdCompra: 100 },
-  { id: 'ins-tempero', nome: 'Sal grosso + tempero', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
-  { id: 'ins-farofa', nome: 'Farofa', unidade: 'kg', precoCompra: 14, qtdCompra: 1 },
-  { id: 'ins-guardanapo', nome: 'Guardanapo/saquinho', unidade: 'pct', precoCompra: 10, qtdCompra: 1 },
-  { id: 'ins-baiao', nome: 'Baião (arroz + feijão + temperos)', unidade: 'kg', precoCompra: 12, qtdCompra: 1, estoque: 0 },
-  { id: 'ins-vinagrete', nome: 'Vinagrete', unidade: 'kg', precoCompra: 10, qtdCompra: 1 },
-  { id: 'ins-mandioca', nome: 'Mandioca cozida', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
-  { id: 'ins-marmita', nome: 'Marmitex/embalagem', unidade: 'un', precoCompra: 45, qtdCompra: 100 },
+  { id: 'ins-carne', nome: 'Carne bovina (alcatra/miolo)', unidade: 'kg', precoCompra: 45, qtdCompra: 1, estoque: 0, grupo: 'Carnes' },
+  { id: 'ins-frango', nome: 'Frango (peito/sobrecoxa)', unidade: 'kg', precoCompra: 22, qtdCompra: 1, estoque: 0, grupo: 'Carnes' },
+  { id: 'ins-linguica', nome: 'Linguiça toscana', unidade: 'kg', precoCompra: 25, qtdCompra: 1, estoque: 0, grupo: 'Carnes' },
+  { id: 'ins-coracao', nome: 'Coração de frango', unidade: 'kg', precoCompra: 30, qtdCompra: 1, estoque: 0, grupo: 'Carnes' },
+  { id: 'ins-queijo', nome: 'Queijo coalho', unidade: 'kg', precoCompra: 50, qtdCompra: 1, estoque: 0, grupo: 'Carnes' },
+  { id: 'ins-palito', nome: 'Palito de bambu', unidade: 'un', precoCompra: 12, qtdCompra: 100, grupo: 'Espeto' },
+  { id: 'ins-tempero', nome: 'Sal grosso + tempero', unidade: 'kg', precoCompra: 8, qtdCompra: 1, grupo: 'Temperos' },
+  { id: 'ins-farofa', nome: 'Farofa', unidade: 'kg', precoCompra: 14, qtdCompra: 1, grupo: 'Acompanhamentos' },
+  { id: 'ins-guardanapo', nome: 'Guardanapo', unidade: 'pct', precoCompra: 10, qtdCompra: 1, grupo: 'Embalagens' },
+  { id: 'ins-baiao', nome: 'Baião (arroz + feijão + temperos)', unidade: 'kg', precoCompra: 12, qtdCompra: 1, estoque: 0, grupo: 'Acompanhamentos' },
+  { id: 'ins-vinagrete', nome: 'Vinagrete', unidade: 'kg', precoCompra: 10, qtdCompra: 1, grupo: 'Acompanhamentos' },
+  { id: 'ins-mandioca', nome: 'Mandioca cozida', unidade: 'kg', precoCompra: 8, qtdCompra: 1, grupo: 'Acompanhamentos' },
+  { id: 'ins-marmita', nome: 'Marmitex/embalagem', unidade: 'un', precoCompra: 45, qtdCompra: 100, grupo: 'Embalagens' },
+  SAQUINHO_TERMICO,
 ]
 
 const espeto = (id: string, nome: string, emoji: string, preco: number, insumoId: string, gramas: number): Produto => ({
@@ -262,6 +302,7 @@ export const CONFIG_INICIAL: Config = {
   taxaPix: 0,
   obsRapidas: ['Bem passado', 'Ao ponto', 'Mal passado', 'Sem sal', 'Com farofa', 'Sem farofa'],
   alertaEstoque: 5,
+  regrasViagem: [{ insumoId: 'ins-saquinho', porPedido: 1, aCadaEspetos: 10 }],
 }
 
 // ---------- armazenamento ----------
@@ -291,6 +332,18 @@ export function useEspetoDados() {
       const novo = { ...misto, ficha }
       return pos >= 0 ? [...ps.slice(0, pos + 1), novo, ...ps.slice(pos + 1)] : [...ps, novo]
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Saquinho térmico para quem já usava antes dele existir (uma vez só).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('espeto:migr-saquinho')) return
+      localStorage.setItem('espeto:migr-saquinho', '1')
+    } catch {
+      return
+    }
+    setInsumos((is) => (is.some((i) => i.id === SAQUINHO_TERMICO.id) ? is : [...is, SAQUINHO_TERMICO]))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -368,6 +421,8 @@ export interface Resumo {
   porProduto: LinhaProduto[]
   /** Compras de insumos/mercadorias registradas no período (dinheiro que saiu para repor estoque). */
   compras: number
+  /** Embalagens para viagem usadas (já incluídas no custo dos produtos). */
+  embalagens: { nome: string; qtd: number; custo: number }[]
 }
 
 export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Produto[], movEstoque: MovEstoque[] = []): Resumo {
@@ -383,7 +438,14 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
   let itensVendidos = 0
   const linhas = new Map<string, LinhaProduto>()
 
+  const embs = new Map<string, { nome: string; qtd: number; custo: number }>()
   for (const p of pedidos) {
+    for (const e of p.embalagens ?? []) {
+      const x = embs.get(e.insumoId) ?? { nome: e.nome, qtd: 0, custo: 0 }
+      x.qtd += e.qtd
+      x.custo += e.qtd * e.custo
+      embs.set(e.insumoId, x)
+    }
     faturamento += p.total
     descontos += p.desconto
     taxas += p.taxas
@@ -479,6 +541,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
       (a, b) => ordemCat[a.categoria] - ordemCat[b.categoria] || ordemProd(a.produtoId) - ordemProd(b.produtoId),
     ),
     compras,
+    embalagens: [...embs.values()],
   }
 }
 

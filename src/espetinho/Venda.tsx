@@ -7,8 +7,11 @@ import {
   NOMES_FORMA,
   arred,
   brl,
+  comEmbalagens,
   consumoDosItens,
   consumoInsumosDosItens,
+  embalagensSugeridas,
+  montarEmbalagens,
   custoCompleto,
   moverEstoqueInsumos,
   moverEstoqueProdutos,
@@ -42,6 +45,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [montandoCombo, setMontandoCombo] = useState<Produto | null>(null)
+  /** Quantidade de embalagens escolhida à mão; null = usa a sugestão automática. */
+  const [embManual, setEmbManual] = useState<Record<string, number> | null>(null)
 
   useEffect(() => {
     if (!ultimo) return
@@ -94,6 +99,10 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
   const subtotal = arred(linhas.reduce((s, l) => s + (prodPorId(l.produtoId)?.preco ?? 0) * l.qtd, 0))
   const qtdItens = linhas.reduce((s, l) => s + l.qtd, 0)
+
+  const itensParaRegra = linhas.map((l) => ({ categoria: prodPorId(l.produtoId)?.categoria ?? 'outro', qtd: l.qtd, escolhas: l.escolhas }))
+  const embSugeridas = embalagensSugeridas(itensParaRegra, config, insumos)
+  const embQtds = viagem ? { ...embSugeridas, ...(embManual ?? {}) } : {}
 
   function adicionar(p: Produto, escolhas?: Escolha[]) {
     const r = restanteBotao(p)
@@ -149,6 +158,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     setLinhas([])
     setCliente('')
     setViagem(false)
+    setEmbManual(null)
     setObsAberta(null)
   }
 
@@ -174,6 +184,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     const total = arred(subtotal - desconto)
     const emDinheiro = pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valor, 0)
     const numero = pedidos.filter((p) => p.caixaId === caixaAberto.id).reduce((m, p) => Math.max(m, p.numero), 0) + 1
+    const embalagens = montarEmbalagens(embQtds, insumos)
+    const custoEmbalagens = embalagens.reduce((s, e) => s + e.qtd * e.custo, 0)
     const pedido: Pedido = {
       id: novoId(),
       numero,
@@ -189,12 +201,13 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
       recebidoDinheiro: recebidoDinheiro > 0 ? recebidoDinheiro : 0,
       troco: recebidoDinheiro > emDinheiro ? arred(recebidoDinheiro - emDinheiro) : 0,
       taxas: arred(pagamentos.reduce((s, p) => s + (p.valor * taxaDaForma(p.forma, config)) / 100, 0)),
-      custoTotal: arred(itens.reduce((s, i) => s + i.custo * i.qtd, 0)),
+      custoTotal: arred(itens.reduce((s, i) => s + i.custo * i.qtd, 0) + custoEmbalagens),
+      ...(embalagens.length ? { embalagens } : {}),
       cancelado: false,
       entregue: false,
     }
     setPedidos((ps) => [...ps, pedido])
-    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(itens, produtos, insumos), -1))
+    setInsumos((is) => moverEstoqueInsumos(is, comEmbalagens(consumoInsumosDosItens(itens, produtos, insumos), embalagens), -1))
     setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
     if (config.imprimirAoFinalizar) imprimirPedido(pedido, config)
     setUltimo(pedido)
@@ -308,6 +321,31 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
             🛍️ Para viagem
           </button>
         </div>
+
+        {viagem && Object.keys(embQtds).length > 0 && (
+          <div className="mt-2 rounded-xl bg-orange-50 p-2">
+            {Object.entries(embQtds).map(([id, q]) => {
+              const ins = insumos.find((i) => i.id === id)
+              if (!ins) return null
+              const mudar = (d: number) => setEmbManual((m) => ({ ...(m ?? {}), [id]: Math.max(0, q + d) }))
+              return (
+                <div key={id} className="flex items-center gap-2">
+                  <span className="flex-1 text-sm font-bold text-orange-900">
+                    🧊 {ins.nome}
+                    {ins.estoque !== undefined && ins.estoque - q < 0 && <span className="block text-xs font-semibold text-red-600">estoque acabando — lance a compra</span>}
+                  </span>
+                  <button className="h-8 w-8 rounded-full bg-white text-xl font-bold" onClick={() => mudar(-1)} aria-label="Menos">
+                    −
+                  </button>
+                  <span className="w-6 text-center text-lg font-black">{q}</span>
+                  <button className="h-8 w-8 rounded-full bg-white text-xl font-bold text-orange-700" onClick={() => mudar(1)} aria-label="Mais">
+                    +
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         <ul className="mt-3 divide-y divide-stone-100">
           {linhas.length === 0 && <li className="py-8 text-center text-stone-400">Toque nos produtos para adicionar</li>}

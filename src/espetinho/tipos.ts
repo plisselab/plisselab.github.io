@@ -11,6 +11,25 @@ export interface Insumo {
   qtdCompra: number
   /** Quanto tem guardado, na unidade do insumo (ex.: 12,5 kg). Sem valor = não controla. */
   estoque?: number
+  /** Grupo livre para organizar a lista (Carnes, Embalagens, Temperos…). */
+  grupo?: string
+}
+
+/** Regra de embalagem usada só quando o pedido é para viagem (ex.: saquinho térmico). */
+export interface RegraViagem {
+  insumoId: string
+  /** Quantas por pedido para viagem. */
+  porPedido: number
+  /** +1 a cada N espetos do pedido (0 = não usa). */
+  aCadaEspetos: number
+}
+
+export interface EmbalagemPedido {
+  insumoId: string
+  nome: string
+  qtd: number
+  /** Custo unitário na hora da venda. */
+  custo: number
 }
 
 export type Categoria = 'espeto' | 'combo' | 'bebida' | 'outro'
@@ -97,7 +116,10 @@ export interface Pedido {
   troco: number
   /** Taxa da maquininha (débito/crédito/pix) calculada na hora da venda. */
   taxas: number
+  /** Custo dos itens + embalagens para viagem. */
   custoTotal: number
+  /** Embalagens usadas no pedido para viagem (saquinho térmico…). */
+  embalagens?: EmbalagemPedido[]
   cancelado: boolean
   entregue: boolean
 }
@@ -148,6 +170,8 @@ export interface Config {
   obsRapidas: string[]
   /** Avisar quando restarem esta quantidade ou menos. */
   alertaEstoque: number
+  /** Embalagens que entram automaticamente nos pedidos para viagem. */
+  regrasViagem: RegraViagem[]
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'

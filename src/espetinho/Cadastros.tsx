@@ -40,69 +40,178 @@ export default function Cadastros({ dados }: { dados: Dados }) {
   )
 }
 
+const GRUPOS_SUGERIDOS = ['Carnes', 'Acompanhamentos', 'Temperos', 'Embalagens', 'Espeto', 'Bebidas', 'Limpeza', 'Outros']
+
 function Insumos({ dados }: { dados: Dados }) {
-  const { insumos, setInsumos, produtos } = dados
+  const { insumos, setInsumos, produtos, config } = dados
+  const [novo, setNovo] = useState<Insumo | null>(null)
   const atualizar = (id: string, m: Partial<Insumo>) => setInsumos((is) => is.map((i) => (i.id === id ? { ...i, ...m } : i)))
-  const usadoEm = (id: string) => produtos.filter((p) => p.ficha.some((f) => f.insumoId === id)).map((p) => p.nome)
+  const usadoEm = (id: string) => [
+    ...produtos.filter((p) => p.ficha.some((f) => f.insumoId === id)).map((p) => p.nome),
+    ...(config.regrasViagem.some((r) => r.insumoId === id) ? ['pedidos para viagem'] : []),
+  ]
+  const grupos = [...new Set([...insumos.map((i) => i.grupo?.trim() || 'Outros')])].sort((a, b) => {
+    const ia = GRUPOS_SUGERIDOS.indexOf(a)
+    const ib = GRUPOS_SUGERIDOS.indexOf(b)
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b)
+  })
+  const todosGrupos = [...new Set([...GRUPOS_SUGERIDOS, ...grupos])]
+
+  function salvarNovo(i: Insumo) {
+    setInsumos((is) => [...is, { ...i, nome: i.nome.trim(), grupo: i.grupo?.trim() || undefined }])
+    setNovo(null)
+  }
 
   return (
     <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
-      <h2 className="text-lg font-extrabold">Insumos</h2>
-      <p className="text-sm text-stone-600">
-        Cadastre o que você compra e quanto pagou. Ex.: paguei <b>R$ 225</b> em <b>5 kg</b> de alcatra → custa <b>R$ 45/kg</b>. Ao mudar o preço aqui,
-        o custo de todos os espetos que usam esse insumo é recalculado.
-      </p>
-      <div className="mt-4 space-y-3">
-        {insumos.map((i) => {
-          const usos = usadoEm(i.id)
-          return (
-            <div key={i.id} className="grid grid-cols-2 items-end gap-2 rounded-xl border-2 border-stone-100 p-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto]">
-              <CampoTexto className="col-span-2 md:col-span-1" rotulo="Insumo" valor={i.nome} aoMudar={(v) => atualizar(i.id, { nome: v })} />
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-stone-600">Unidade</span>
-                <select
-                  className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2"
-                  value={i.unidade}
-                  onChange={(e) => atualizar(i.id, { unidade: e.target.value as Unidade })}
-                >
-                  {(Object.keys(NOMES_UNIDADE) as Unidade[]).map((u) => (
-                    <option key={u} value={u}>
-                      {NOMES_UNIDADE[u]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <CampoNumero rotulo="Paguei" prefixo="R$" valor={i.precoCompra} aoMudar={(v) => atualizar(i.id, { precoCompra: v })} />
-              <CampoNumero rotulo="Na compra veio" sufixo={i.unidade} valor={i.qtdCompra} aoMudar={(v) => atualizar(i.id, { qtdCompra: v })} />
-              <div className="pb-2">
-                <div className="text-sm font-semibold text-stone-600">Custo</div>
-                <div className="font-extrabold">
-                  {brl(custoUnitarioInsumo(i))}/{i.unidade}
-                </div>
-              </div>
-              <button
-                className="pb-2 text-2xl text-stone-400 hover:text-red-600"
-                title="Excluir"
-                onClick={() => {
-                  if (usos.length && !confirm(`"${i.nome}" é usado em: ${usos.join(', ')}. Excluir mesmo assim? Ele sai da ficha desses produtos.`)) return
-                  if (!usos.length && !confirm(`Excluir "${i.nome}"?`)) return
-                  setInsumos((is) => is.filter((x) => x.id !== i.id))
-                }}
-              >
-                ×
-              </button>
-              {usos.length > 0 && <p className="col-span-full text-xs text-stone-500">Usado em: {usos.join(', ')}</p>}
-            </div>
-          )
-        })}
+      <datalist id="grupos-insumo">
+        {todosGrupos.map((g) => (
+          <option key={g} value={g} />
+        ))}
+      </datalist>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-extrabold">Insumos</h2>
+          <p className="text-sm text-stone-600">
+            Tudo que você compra: carnes, temperos, palitos, saquinho térmico, marmitex, carvão… Ex.: paguei <b>R$ 30</b> em <b>100</b> saquinhos → custa{' '}
+            <b>R$ 0,30</b> cada. Mudou o preço? Edite aqui e o custo dos produtos é recalculado.
+          </p>
+        </div>
+        <button
+          className={btn.primario}
+          onClick={() => setNovo({ id: novoId(), nome: '', unidade: 'un', precoCompra: 0, qtdCompra: 1, grupo: '' })}
+        >
+          + Novo insumo
+        </button>
       </div>
-      <button
-        className={`${btn.primario} mt-4`}
-        onClick={() => setInsumos((is) => [...is, { id: novoId(), nome: 'Novo insumo', unidade: 'kg', precoCompra: 0, qtdCompra: 1 }])}
-      >
-        + Adicionar insumo
-      </button>
+
+      {grupos.map((g) => (
+        <div key={g} className="mt-5">
+          <h3 className="mb-2 text-sm font-extrabold uppercase tracking-wide text-stone-500">{g}</h3>
+          <div className="space-y-3">
+            {insumos
+              .filter((i) => (i.grupo?.trim() || 'Outros') === g)
+              .map((i) => {
+                const usos = usadoEm(i.id)
+                return (
+                  <div key={i.id} className="grid grid-cols-2 items-end gap-2 rounded-xl border-2 border-stone-100 p-3 md:grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto]">
+                    <CampoTexto className="col-span-2 md:col-span-1" rotulo="Insumo" valor={i.nome} aoMudar={(v) => atualizar(i.id, { nome: v })} />
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-semibold text-stone-600">Grupo</span>
+                      <input
+                        list="grupos-insumo"
+                        className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2 outline-none focus:border-orange-500"
+                        value={i.grupo ?? ''}
+                        placeholder="Outros"
+                        onChange={(e) => atualizar(i.id, { grupo: e.target.value })}
+                      />
+                    </label>
+                    <SeletorUnidade valor={i.unidade} aoMudar={(u) => atualizar(i.id, { unidade: u })} />
+                    <CampoNumero rotulo="Paguei" prefixo="R$" valor={i.precoCompra} aoMudar={(v) => atualizar(i.id, { precoCompra: v })} />
+                    <CampoNumero rotulo="Na compra veio" sufixo={i.unidade} valor={i.qtdCompra} aoMudar={(v) => atualizar(i.id, { qtdCompra: v })} />
+                    <div className="pb-2">
+                      <div className="text-sm font-semibold text-stone-600">Custo</div>
+                      <div className="font-extrabold">
+                        {brl(custoUnitarioInsumo(i))}/{i.unidade}
+                      </div>
+                    </div>
+                    <button
+                      className="pb-2 text-2xl text-stone-400 hover:text-red-600"
+                      title="Excluir"
+                      onClick={() => {
+                        if (usos.length && !confirm(`"${i.nome}" é usado em: ${usos.join(', ')}. Excluir mesmo assim?`)) return
+                        if (!usos.length && !confirm(`Excluir "${i.nome}"?`)) return
+                        setInsumos((is) => is.filter((x) => x.id !== i.id))
+                        if (config.regrasViagem.some((r) => r.insumoId === i.id))
+                          dados.setConfig((c) => ({ ...c, regrasViagem: c.regrasViagem.filter((r) => r.insumoId !== i.id) }))
+                      }}
+                    >
+                      ×
+                    </button>
+                    <div className="col-span-full flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-stone-500">
+                      <label className="flex items-center gap-1.5 font-semibold text-stone-700">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-orange-600"
+                          checked={i.estoque !== undefined}
+                          onChange={(e) => atualizar(i.id, { estoque: e.target.checked ? 0 : undefined })}
+                        />
+                        Controlar estoque
+                        {i.estoque !== undefined && (
+                          <span className="font-normal text-stone-500">
+                            {' '}
+                            (tem {i.estoque.toLocaleString('pt-BR')} {i.unidade} — lance entradas na aba Estoque)
+                          </span>
+                        )}
+                      </label>
+                      {usos.length > 0 && <span>Usado em: {usos.join(', ')}</span>}
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      ))}
+
+      {novo && (
+        <Modal titulo="Novo insumo" aberto aoFechar={() => setNovo(null)}>
+          <div className="space-y-3">
+            <CampoTexto rotulo="Nome" valor={novo.nome} aoMudar={(v) => setNovo({ ...novo, nome: v })} placeholder="Ex.: Saquinho térmico grande, Carvão, Pimenta…" />
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-stone-600">Grupo</span>
+                <input
+                  list="grupos-insumo"
+                  className="w-full rounded-xl border-2 border-stone-200 bg-white px-3 py-2 outline-none focus:border-orange-500"
+                  value={novo.grupo ?? ''}
+                  placeholder="Ex.: Embalagens"
+                  onChange={(e) => setNovo({ ...novo, grupo: e.target.value })}
+                />
+              </label>
+              <SeletorUnidade valor={novo.unidade} aoMudar={(u) => setNovo({ ...novo, unidade: u })} />
+              <CampoNumero rotulo="Quanto pagou" prefixo="R$" valor={novo.precoCompra} aoMudar={(v) => setNovo({ ...novo, precoCompra: v })} />
+              <CampoNumero rotulo="Quanto veio" sufixo={novo.unidade} valor={novo.qtdCompra} aoMudar={(v) => setNovo({ ...novo, qtdCompra: v })} />
+            </div>
+            <p className="rounded-xl bg-stone-100 p-2 text-center">
+              Custo: <b>{brl(custoUnitarioInsumo(novo))}</b> por {novo.unidade}
+            </p>
+            <label className="flex items-center gap-2 font-semibold">
+              <input
+                type="checkbox"
+                className="h-5 w-5 accent-orange-600"
+                checked={novo.estoque !== undefined}
+                onChange={(e) => setNovo({ ...novo, estoque: e.target.checked ? 0 : undefined })}
+              />
+              Controlar estoque
+            </label>
+            {novo.estoque !== undefined && (
+              <CampoNumero rotulo="Quanto tem agora" sufixo={novo.unidade} valor={novo.estoque} aoMudar={(v) => setNovo({ ...novo, estoque: v })} />
+            )}
+            <p className="text-xs text-stone-500">
+              Depois de salvar, use o insumo na ficha de um produto (Cadastros → Produtos → Editar) ou como embalagem para viagem (Config).
+            </p>
+          </div>
+          <button className={`${btn.primario} mt-4 w-full`} disabled={!novo.nome.trim()} onClick={() => salvarNovo(novo)}>
+            Salvar insumo
+          </button>
+        </Modal>
+      )}
     </section>
+  )
+}
+
+function SeletorUnidade({ valor, aoMudar }: { valor: Unidade; aoMudar: (u: Unidade) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-sm font-semibold text-stone-600">Unidade</span>
+      <select className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2" value={valor} onChange={(e) => aoMudar(e.target.value as Unidade)}>
+        {(Object.keys(NOMES_UNIDADE) as Unidade[]).map((u) => (
+          <option key={u} value={u}>
+            {NOMES_UNIDADE[u]}
+          </option>
+        ))}
+      </select>
+    </label>
   )
 }
 
