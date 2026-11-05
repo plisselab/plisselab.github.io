@@ -2,6 +2,27 @@
 
 - **Página principal (`/`)**: loja para os clientes verem os produtos, montarem um carrinho e enviarem o pedido pelo WhatsApp. Antes de enviar, o cliente informa nome, endereço (o CEP preenche rua, bairro, cidade e estado via ViaCEP) e forma de pagamento; a mensagem chega com itens, subtotal, taxa de entrega fixa (`taxaEntrega` em `src/loja/config.ts`) e total. Carrinho e dados de entrega ficam salvos no navegador do cliente.
 - **Calculadora (`/#calculadora`)**: ferramenta interna, sem nenhum link na loja.
+- **PDV de Espetinho (`/#espetinho`)**: sistema de vendas e controle de custo para espetinho, também sem link na loja (veja abaixo).
+
+## PDV de Espetinho (`/#espetinho`)
+
+Código em `src/espetinho/`. Tudo fica salvo no navegador do aparelho (use **Config → Baixar backup** com frequência).
+
+- **Vender**: botões grandes com foto/emoji de cada espeto, bebida e acompanhamento. Um toque adiciona; `+`/`−` ajustam; “+ observação” tem atalhos (bem passado, sem sal…). Marcação **Comer aqui / Para viagem**, nome do cliente, pagamento em dinheiro (com troco), Pix, débito, crédito ou dividido, e desconto.
+- **Cupom**: ao confirmar, imprime a **via da churrasqueira** (nº do pedido enorme, PARA VIAGEM em tarja preta, itens e observações em letra grande, sem preços) e a **via do cliente** (preços, pagamento, troco, “não é documento fiscal”). Papel 58 ou 80 mm.
+- **Painel**: faturamento, espetos vendidos, quantos restam do que foi preparado (com alerta de estoque baixo e “repor”), lucro até agora, totais por forma de pagamento e fila de pedidos (entregue / reimprimir / cancelar).
+- **Caixa**: abrir com troco inicial e quantidade preparada de cada produto; lançar despesas do dia (carvão, gelo…), retiradas e reforços; fechar contando o dinheiro (mostra se sobrou ou faltou).
+- **Relatórios**: por caixa e resumo do mês — quanto em dinheiro, quanto em conta (já sem taxa da maquininha), custo dos produtos, despesas e **lucro**. Pode imprimir na térmica.
+- **Cadastros**: insumos (quanto pagou ÷ quanto veio = custo por kg/unidade) e produtos com **ficha técnica** (ex.: 100 g de carne + 1 palito + 3 g de tempero). O custo, lucro por unidade, margem e preço sugerido são calculados sozinhos.
+
+**Lucro** = faturamento − custo dos insumos dos itens vendidos − taxas da maquininha − despesas do dia.
+
+### Impressora térmica (Waytech)
+
+1. Instale o driver no Windows e deixe a Waytech como impressora padrão, com papel de rolo 80 mm (ou 58 mm).
+2. Na primeira impressão pelo Chrome: destino Waytech, margens “Nenhuma”, escala 100%, sem cabeçalhos/rodapés.
+3. Para imprimir direto, sem a janela de impressão, abra o Chrome com `--kiosk-printing` no atalho.
+4. Use **Config → Imprimir teste** para conferir.
 
 ## Personalizando a loja
 
