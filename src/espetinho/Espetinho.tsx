@@ -5,6 +5,7 @@ import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
 import Estoque from './Estoque'
 import Painel from './Painel'
+import { usePlanilha } from './planilha'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
 
@@ -23,6 +24,8 @@ const ABAS: { id: Aba; nome: string; icone: string }[] = [
 /** PDV de espetinho: vendas, custo por ficha técnica, estoque do dia, caixa e relatórios. Dados no localStorage. */
 export default function Espetinho() {
   const dados = useEspetoDados()
+  const planilha = usePlanilha(dados)
+  const [carregando, setCarregando] = useState(false)
   const [aba, setAba] = useState<Aba>('venda')
 
   useEffect(() => {
@@ -56,6 +59,23 @@ export default function Espetinho() {
               </button>
             ))}
           </nav>
+          {planilha.ligado && (
+            <button
+              onClick={() => setAba('config')}
+              title={planilha.estado.tipo === 'erro' ? planilha.estado.msg : 'Sincronização com o Google Planilhas'}
+              className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ${
+                planilha.estado.tipo === 'erro' ? 'bg-red-600 text-white' : planilha.estado.tipo === 'ok' ? 'text-emerald-400' : 'text-amber-300'
+              }`}
+            >
+              {planilha.estado.tipo === 'erro'
+                ? '⚠ planilha'
+                : planilha.estado.tipo === 'ok'
+                  ? '☁ salvo'
+                  : planilha.estado.tipo === 'enviando'
+                    ? '☁ salvando…'
+                    : '☁ …'}
+            </button>
+          )}
           <div className="hidden shrink-0 text-right text-xs md:block">
             {r ? (
               <>
@@ -70,6 +90,37 @@ export default function Espetinho() {
           </div>
         </div>
       </header>
+      {planilha.remotoMaisNovo && (
+        <div className="bg-sky-600 text-white">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
+            <span className="flex-1 font-semibold">
+              A planilha tem dados mais novos, salvos em {new Date(planilha.remotoMaisNovo.atualizadoEm).toLocaleString('pt-BR')} por outro aparelho.
+            </span>
+            <button
+              className="rounded-lg bg-white px-3 py-1.5 font-bold text-sky-800 disabled:opacity-60"
+              disabled={carregando}
+              onClick={async () => {
+                setCarregando(true)
+                try {
+                  await planilha.carregar()
+                } catch (e) {
+                  alert(e instanceof Error ? e.message : String(e))
+                } finally {
+                  setCarregando(false)
+                }
+              }}
+            >
+              {carregando ? 'Carregando…' : 'Usar os dados da planilha'}
+            </button>
+            <button
+              className="rounded-lg px-3 py-1.5 font-semibold text-white underline"
+              onClick={() => confirm('Manter os dados DESTE aparelho e sobrescrever a planilha?') && planilha.ignorarRemoto()}
+            >
+              Manter os deste aparelho
+            </button>
+          </div>
+        </div>
+      )}
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
         {aba === 'venda' && <Venda dados={dados} irPara={setAba} />}
         {aba === 'painel' && <Painel dados={dados} irPara={setAba} />}
@@ -77,7 +128,7 @@ export default function Espetinho() {
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={setAba} />}
         {aba === 'relatorios' && <Relatorios dados={dados} />}
         {aba === 'cadastros' && <Cadastros dados={dados} />}
-        {aba === 'config' && <ConfigTela dados={dados} />}
+        {aba === 'config' && <ConfigTela dados={dados} planilha={planilha} />}
       </main>
     </div>
   )

@@ -8,6 +8,10 @@
 
 Código em `src/espetinho/`. Tudo fica salvo no navegador do aparelho (use **Config → Baixar backup** com frequência).
 
+**Online:** a publicação no GitHub Pages (`.github/workflows/deploy-pages.yml`, a cada push na `main`) inclui o PDV em `/pdv/`. Toda atualização do código entra no ar sozinha; basta recarregar a página.
+
+**Google Planilhas (Config → ☁ Google Planilhas):** o PDV copia um código de Apps Script (`src/espetinho/appsScript.ts`) com uma chave secreta; colado na planilha e implantado como App da Web, ele recebe a cada mudança as abas Caixas, Pedidos, Itens vendidos, Estoque, Mov. estoque e Despesas, mais uma cópia completa escondida (`_backup`) usada para carregar os dados em outro computador. O navegador continua sendo o armazenamento principal (funciona offline e reenvia quando a internet volta). Nada é enviado antes de conferir a planilha, para um aparelho vazio não apagar os dados de lá.
+
 **Usar no computador do caixa sem site:** baixe `pdv/pdv-espetinho.html` e abra no Chrome (duplo clique). É o sistema inteiro num arquivo só e funciona sem internet. Deixe o arquivo sempre na mesma pasta: o Chrome guarda os dados junto do endereço do arquivo. Para atualizar o arquivo depois de mudanças no código: `npm run build:pdv`.
 
 - **Vender**: botões grandes com foto/emoji de cada espeto, combo/jantinha, bebida e acompanhamento. Combos e jantinhas abrem a escolha do espeto (e do refri) na hora. Um toque adiciona; `+`/`−` ajustam; “+ observação” tem atalhos (bem passado, sem sal…). Marcação **Comer aqui / Para viagem**, nome do cliente, pagamento em dinheiro (com troco), Pix, débito, crédito ou dividido, e desconto.

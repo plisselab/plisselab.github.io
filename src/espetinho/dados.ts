@@ -303,6 +303,9 @@ export const CONFIG_INICIAL: Config = {
   obsRapidas: ['Bem passado', 'Ao ponto', 'Mal passado', 'Sem sal', 'Com farofa', 'Sem farofa'],
   alertaEstoque: 5,
   regrasViagem: [{ insumoId: 'ins-saquinho', porPedido: 1, aCadaEspetos: 10 }],
+  planilhaUrl: '',
+  planilhaChave: '',
+  planilhaAuto: true,
 }
 
 // ---------- armazenamento ----------

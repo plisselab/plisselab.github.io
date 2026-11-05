@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
-import { type Dados } from './dados'
+import { codigoAppsScript } from './appsScript'
+import { novoId, type Dados } from './dados'
+import { urlValida, type Planilha } from './planilha'
 import { imprimirTeste } from './impressao'
 import type { Config } from './tipos'
 import { CampoNumero, CampoTexto, btn } from './ui'
 
-export default function ConfigTela({ dados }: { dados: Dados }) {
+export default function ConfigTela({ dados, planilha }: { dados: Dados; planilha: Planilha }) {
   const { config, setConfig } = dados
   const set = (m: Partial<Config>) => setConfig((c) => ({ ...c, ...m }))
   const [novaObs, setNovaObs] = useState('')
@@ -212,6 +214,8 @@ export default function ConfigTela({ dados }: { dados: Dados }) {
         />
       </section>
 
+      <SecaoPlanilha dados={dados} planilha={planilha} />
+
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">Backup</h2>
         <p className="text-sm text-stone-600">
@@ -239,5 +243,150 @@ export default function ConfigTela({ dados }: { dados: Dados }) {
         </div>
       </section>
     </div>
+  )
+}
+
+function SecaoPlanilha({ dados, planilha }: { dados: Dados; planilha: Planilha }) {
+  const { config, setConfig } = dados
+  const set = (m: Partial<Config>) => setConfig((c) => ({ ...c, ...m }))
+  const [copiado, setCopiado] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const chave = config.planilhaChave
+  const est = planilha.estado
+
+  async function copiar() {
+    let k = chave
+    if (!k) {
+      k = novoId().replace(/-/g, '')
+      set({ planilhaChave: k })
+    }
+    try {
+      await navigator.clipboard.writeText(codigoAppsScript(k))
+      setCopiado(true)
+      setTimeout(() => setCopiado(false), 3000)
+    } catch {
+      alert('Não consegui copiar sozinho. Abra “ver o código” e copie à mão.')
+    }
+  }
+
+  async function rodar(f: () => Promise<void>) {
+    setOcupado(true)
+    try {
+      await f()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e))
+    } finally {
+      setOcupado(false)
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border-2 border-emerald-200 bg-white p-4">
+      <h2 className="text-lg font-extrabold">☁ Google Planilhas</h2>
+      <p className="text-sm text-stone-600">
+        Guarda uma cópia de tudo numa planilha sua (Caixas, Pedidos, Itens vendidos, Estoque, Despesas), atualizada sozinha a cada venda. Serve para
+        acompanhar pelo celular e para recuperar os dados em outro computador. O sistema continua funcionando se a internet cair — envia quando voltar.
+      </p>
+
+      <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
+        <li>
+          Crie uma planilha nova em <b>sheets.google.com</b> (ex.: “PDV Espetinho”).
+        </li>
+        <li>
+          Na planilha: <b>Extensões → Apps Script</b>. Apague o que estiver lá e cole o código:{' '}
+          <button className={btn.secundario + ' !px-3 !py-1 text-sm'} onClick={copiar}>
+            {copiado ? '✔ Copiado!' : '📋 Copiar código'}
+          </button>
+          {chave && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-xs text-stone-500">ver o código</summary>
+              <textarea readOnly className="mt-1 h-40 w-full rounded-lg border-2 border-stone-200 p-2 font-mono text-xs" value={codigoAppsScript(chave)} />
+            </details>
+          )}
+        </li>
+        <li>
+          Clique em <b>Salvar</b> (💾) e depois <b>Implantar → Nova implantação</b> → engrenagem → <b>App da Web</b>. Em “Executar como” deixe{' '}
+          <b>Eu</b> e em “Quem pode acessar” escolha <b>Qualquer pessoa</b>. Clique em Implantar e autorize com sua conta Google (se aparecer “app não
+          verificado”, clique em Avançado → Acessar).
+        </li>
+        <li>Copie o “URL do app da Web” (termina em /exec) e cole aqui:</li>
+      </ol>
+      <input
+        className="mt-2 w-full rounded-xl border-2 border-stone-200 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-500"
+        placeholder="https://script.google.com/macros/s/.../exec"
+        value={config.planilhaUrl}
+        onChange={(e) => set({ planilhaUrl: e.target.value.trim() })}
+      />
+      {config.planilhaUrl && !urlValida(config.planilhaUrl) && <p className="mt-1 text-sm font-semibold text-red-600">Esse não parece o endereço do app da Web.</p>}
+      {config.planilhaUrl && !chave && (
+        <div className="mt-2 rounded-xl bg-amber-50 p-3 text-sm">
+          <p className="font-semibold text-amber-900">
+            Planilha nova? Clique em “Copiar código” (passo 2) para gerar a chave. Já ligou a planilha em outro computador? Cole a chave de lá:
+          </p>
+          <input
+            className="mt-2 w-full rounded-lg border-2 border-stone-200 px-2 py-1 font-mono"
+            placeholder="chave da planilha"
+            onBlur={(e) => e.target.value.trim() && set({ planilhaChave: e.target.value.trim() })}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          />
+        </div>
+      )}
+
+      {planilha.ligado && (
+        <div className="mt-3 space-y-3">
+          <div
+            className={`rounded-xl p-3 text-sm font-semibold ${est.tipo === 'erro' ? 'bg-red-50 text-red-800' : est.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}
+          >
+            {est.tipo === 'erro'
+              ? `Erro: ${est.msg}`
+              : est.tipo === 'ok'
+                ? est.em
+                  ? `Conectado. Última gravação na planilha: ${new Date(est.em).toLocaleString('pt-BR')}`
+                  : 'Conectado. A planilha ainda está vazia — clique em “Enviar agora”.'
+                : est.tipo === 'enviando'
+                  ? 'Enviando…'
+                  : 'Mudanças esperando para enviar…'}
+          </div>
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" className="h-5 w-5 accent-emerald-600" checked={config.planilhaAuto} onChange={(e) => set({ planilhaAuto: e.target.checked })} />
+            Enviar sozinho a cada mudança
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button className={btn.verde + ' !py-2'} disabled={ocupado} onClick={() => rodar(planilha.enviar)}>
+              ⬆ Enviar agora
+            </button>
+            <button
+              className={btn.secundario}
+              disabled={ocupado}
+              onClick={() =>
+                confirm('Trocar TODOS os dados deste aparelho pelos que estão na planilha?') &&
+                rodar(async () => {
+                  await planilha.carregar()
+                  alert('Dados carregados da planilha.')
+                })
+              }
+            >
+              ⬇ Carregar da planilha
+            </button>
+          </div>
+          <p className="text-xs text-stone-500">
+            Use “Carregar da planilha” para levar os dados para outro computador: configure o mesmo endereço e a mesma chave lá. Use um aparelho de cada
+            vez para vender — se dois venderem ao mesmo tempo, o último a salvar vence.
+          </p>
+          <details className="text-xs text-stone-500">
+            <summary className="cursor-pointer">Chave da planilha</summary>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <code className="rounded bg-stone-100 px-2 py-1">{chave}</code>
+              <span>Em outro computador, cole o mesmo endereço e esta chave:</span>
+              <input
+                className="rounded border-2 border-stone-200 px-2 py-1 font-mono"
+                value={chave}
+                onChange={(e) => set({ planilhaChave: e.target.value.trim() })}
+              />
+            </div>
+          </details>
+        </div>
+      )}
+    </section>
   )
 }

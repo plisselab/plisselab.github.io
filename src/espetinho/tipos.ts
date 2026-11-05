@@ -172,6 +172,12 @@ export interface Config {
   alertaEstoque: number
   /** Embalagens que entram automaticamente nos pedidos para viagem. */
   regrasViagem: RegraViagem[]
+  /** Endereço do Apps Script ligado à planilha do Google (sincronização). */
+  planilhaUrl: string
+  /** Chave combinada com o script, para ninguém mais gravar na planilha. */
+  planilhaChave: string
+  /** Enviar para a planilha sozinho a cada mudança. */
+  planilhaAuto: boolean
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'
