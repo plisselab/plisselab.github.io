@@ -136,6 +136,8 @@ export default function Estoque({ dados }: { dados: Dados }) {
         </section>
       </div>
 
+      <ParaOndeFoi movEstoque={movEstoque} />
+
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">Histórico do estoque</h2>
         {historico.length === 0 && <p className="text-sm text-stone-500">Nada lançado ainda.</p>}
@@ -169,6 +171,78 @@ export default function Estoque({ dados }: { dados: Dados }) {
       {acao?.tipo === 'contarInsumo' && <ModalContagem dados={dados} alvo={{ insumo: acao.insumo }} aoFechar={() => setAcao(null)} />}
       {acao?.tipo === 'contarProduto' && <ModalContagem dados={dados} alvo={{ produto: acao.produto }} aoFechar={() => setAcao(null)} />}
     </div>
+  )
+}
+
+/** Quanto de cada carne/insumo virou cada espeto (pelas montagens), na semana ou no mês. */
+function ParaOndeFoi({ movEstoque }: { movEstoque: MovEstoque[] }) {
+  const [dias, setDias] = useState(7)
+  const desde = new Date(Date.now() - dias * 86400000).toISOString()
+  const mapa = new Map<string, { nome: string; unidade: string; total: number; destinos: Map<string, { qtd: number; espetos: number }> }>()
+  for (const m of movEstoque) {
+    if (m.tipo !== 'montagem' || m.criadoEm < desde) continue
+    for (const c of m.consumo ?? []) {
+      const e = mapa.get(c.insumoId) ?? { nome: c.nome, unidade: c.unidade, total: 0, destinos: new Map() }
+      e.total += c.qtd
+      const d = e.destinos.get(m.nome) ?? { qtd: 0, espetos: 0 }
+      d.qtd += c.qtd
+      d.espetos += m.qtd
+      e.destinos.set(m.nome, d)
+      mapa.set(c.insumoId, e)
+    }
+  }
+  const itens = [...mapa.values()].filter((e) => e.unidade === 'kg' || e.unidade === 'L')
+  return (
+    <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-extrabold">Para onde foi a carne</h2>
+        <div className="flex gap-1">
+          {[
+            [7, '7 dias'],
+            [30, '30 dias'],
+          ].map(([d, r]) => (
+            <button
+              key={d}
+              onClick={() => setDias(d as number)}
+              className={`rounded-full px-3 py-1 text-sm font-bold ${dias === d ? 'bg-stone-900 text-white' : 'bg-stone-100'}`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+      {itens.length === 0 && <p className="mt-2 text-sm text-stone-500">Nenhuma montagem no período.</p>}
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {itens.map((e) => (
+          <div key={e.nome} className="rounded-xl bg-stone-50 p-3">
+            <div className="flex justify-between font-bold">
+              <span>{e.nome}</span>
+              <span>{fmtQtd(e.total, e.unidade)}</span>
+            </div>
+            <ul className="mt-2 space-y-1.5">
+              {[...e.destinos.entries()].map(([nome, d]) => {
+                const pc = e.total > 0 ? (d.qtd / e.total) * 100 : 0
+                return (
+                  <li key={nome}>
+                    <div className="flex justify-between text-sm">
+                      <span>
+                        {nome} <span className="text-stone-500">({d.espetos} espetos)</span>
+                      </span>
+                      <span>
+                        <b>{fmtQtd(d.qtd, e.unidade)}</b> · {Math.round(pc)}%
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-stone-200">
+                      <div className="h-full bg-orange-500" style={{ width: `${pc}%` }} />
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -276,102 +350,170 @@ function ModalCompra({
   )
 }
 
+/**
+ * Montagem de vários espetos de uma vez. Um insumo pode ir para mais de um espeto
+ * (ex.: a carne vai para "Carne" e para "Misto"): o quadro mostra quanto vai para cada um e quanto sobra.
+ */
 function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Produto; aoFechar: () => void }) {
   const opcoes = dados.produtos.filter((p) => p.categoria === 'espeto' && p.estoque !== undefined)
-  const [produtoId, setProdutoId] = useState(inicial?.id ?? opcoes[0]?.id ?? '')
-  const produto = dados.produtos.find((p) => p.id === produtoId)
-  const [qtd, setQtd] = useState(0)
-  // consumo real informado (na unidade do insumo: kg, un…); undefined = usa a ficha
+  const [qtds, setQtds] = useState<Record<string, number>>({})
+  // peso real usado, quando pesou diferente da ficha (na unidade do insumo)
   const [real, setReal] = useState<Record<string, number>>({})
+  const fatorDe = (ins: Insumo) => (ins.unidade === 'kg' || ins.unidade === 'L' ? 1000 : 1)
 
-  const itens = (produto?.ficha ?? [])
-    .map((f) => {
+  // consumo pela ficha: insumo → produto → quantidade (na unidade do insumo)
+  const porInsumo = new Map<string, { ins: Insumo; partes: { produto: Produto; qtd: number }[] }>()
+  for (const p of opcoes) {
+    const n = qtds[p.id] ?? 0
+    if (n <= 0) continue
+    for (const f of p.ficha) {
       const ins = dados.insumos.find((i) => i.id === f.insumoId)
-      if (!ins || ins.estoque === undefined) return null
-      const fator = ins.unidade === 'kg' || ins.unidade === 'L' ? 1000 : 1
-      const pelaFicha = (f.qtd * qtd) / fator
-      return { ins, porUnidade: f.qtd, pelaFicha, usado: real[ins.id] ?? pelaFicha, fator }
+      if (!ins || ins.estoque === undefined || f.qtd <= 0) continue
+      const linha = porInsumo.get(ins.id) ?? { ins, partes: [] }
+      linha.partes.push({ produto: p, qtd: (f.qtd * n) / fatorDe(ins) })
+      porInsumo.set(ins.id, linha)
+    }
+  }
+  const linhas = [...porInsumo.values()].map((l) => {
+    const pelaFicha = l.partes.reduce((s, x) => s + x.qtd, 0)
+    const usado = real[l.ins.id] ?? pelaFicha
+    const fatorReal = pelaFicha > 0 ? usado / pelaFicha : 1
+    const sobra = (l.ins.estoque ?? 0) - usado
+    return { ...l, pelaFicha, usado, fatorReal, sobra }
+  })
+  const total = Object.values(qtds).reduce((s, n) => s + (n > 0 ? n : 0), 0)
+
+  /** Com a sobra deste insumo, quantos ainda dá de cada espeto que usa ele (limitado pelos outros insumos do espeto). */
+  function daMais(insumoId: string) {
+    return opcoes.flatMap((p) => {
+      const f = p.ficha.find((x) => x.insumoId === insumoId)
+      if (!f || f.qtd <= 0) return []
+      let n = Infinity
+      for (const g of p.ficha) {
+        const ins = dados.insumos.find((i) => i.id === g.insumoId)
+        if (!ins || ins.estoque === undefined || g.qtd <= 0) continue
+        const linha = linhas.find((l) => l.ins.id === ins.id)
+        const resta = linha ? linha.sobra : ins.estoque
+        n = Math.min(n, Math.floor(Math.max(0, resta) / (g.qtd / fatorDe(ins)) + 1e-6))
+      }
+      return n === Infinity ? [] : [{ produto: p, n }]
     })
-    .filter((x): x is NonNullable<typeof x> => x !== null)
+  }
 
   function salvar() {
-    if (!produto || qtd <= 0) return
+    if (total <= 0) return
     dados.setInsumos((is) =>
       is.map((i) => {
-        const it = itens.find((x) => x.ins.id === i.id)
-        return it ? { ...i, estoque: arred(((i.estoque ?? 0) - it.usado) * 1000) / 1000 } : i
+        const l = linhas.find((x) => x.ins.id === i.id)
+        return l ? { ...i, estoque: arred(((i.estoque ?? 0) - l.usado) * 1000) / 1000 } : i
       }),
     )
-    dados.setProdutos((ps) => ps.map((p) => (p.id === produto.id ? { ...p, estoque: (p.estoque ?? 0) + qtd } : p)))
-    registrar(dados, {
-      tipo: 'montagem',
-      produtoId: produto.id,
-      nome: produto.nome,
-      qtd,
-      unidade: 'un',
-      consumo: itens.map((it) => ({ insumoId: it.ins.id, nome: it.ins.nome, qtd: it.usado, unidade: it.ins.unidade })),
-    })
+    dados.setProdutos((ps) => ps.map((p) => (qtds[p.id] > 0 ? { ...p, estoque: (p.estoque ?? 0) + qtds[p.id] } : p)))
+    // um registro por espeto, com o peso real dividido na proporção da ficha
+    const agora = new Date().toISOString()
+    const novos: MovEstoque[] = opcoes
+      .filter((p) => (qtds[p.id] ?? 0) > 0)
+      .map((p) => ({
+        id: novoId(),
+        criadoEm: agora,
+        tipo: 'montagem',
+        produtoId: p.id,
+        nome: p.nome,
+        qtd: qtds[p.id],
+        unidade: 'un',
+        consumo: linhas.flatMap((l) => {
+          const parte = l.partes.find((x) => x.produto.id === p.id)
+          return parte ? [{ insumoId: l.ins.id, nome: l.ins.nome, qtd: Math.round(parte.qtd * l.fatorReal * 1000) / 1000, unidade: l.ins.unidade }] : []
+        }),
+      }))
+    dados.setMovEstoque((ms) => [...ms, ...novos])
     aoFechar()
   }
 
-  function atualizarFicha(insumoId: string, porUnidade: number) {
+  function atualizarFicha(insumoId: string, produtoId: string, porUnidade: number) {
     dados.setProdutos((ps) =>
       ps.map((p) => (p.id === produtoId ? { ...p, ficha: p.ficha.map((f) => (f.insumoId === insumoId ? { ...f, qtd: Math.round(porUnidade) } : f)) } : p)),
     )
   }
 
   return (
-    <Modal titulo="Montar espetos" aberto aoFechar={aoFechar}>
+    <Modal titulo="Montar espetos" aberto aoFechar={aoFechar} largo>
       {opcoes.length === 0 ? (
         <p>Nenhum espeto com controle de estoque.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <p className="text-sm text-stone-600">Digite quantos de cada espeto você montou. Pode lançar vários de uma vez (ex.: carne, linguiça e misto).</p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {opcoes.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => {
-                  setProdutoId(p.id)
-                  setReal({})
-                }}
-                className={`flex items-center gap-2 rounded-xl border-4 p-2 font-bold ${produtoId === p.id ? 'border-orange-500 bg-orange-50' : 'border-stone-200'}`}
-              >
-                <Imagem emoji={p.emoji} imagem={p.imagem} className="h-8 w-8 shrink-0 rounded text-2xl" />
-                {p.nome}
-              </button>
+              <li key={p.id} className={`flex items-center gap-2 rounded-xl border-2 p-2 ${qtds[p.id] > 0 ? 'border-orange-400 bg-orange-50' : 'border-stone-200'}`}>
+                <Imagem emoji={p.emoji} imagem={p.imagem} className="h-9 w-9 shrink-0 rounded text-2xl" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold">{p.nome}</div>
+                  <div className="truncate text-xs text-stone-500">
+                    {p.ficha
+                      .map((f) => {
+                        const ins = dados.insumos.find((i) => i.id === f.insumoId)
+                        return ins && ins.estoque !== undefined ? `${f.qtd} ${unidadeFicha(ins.unidade)} ${ins.nome.split(' ')[0].toLowerCase()}` : null
+                      })
+                      .filter(Boolean)
+                      .join(' + ') || 'sem insumo controlado'}
+                  </div>
+                </div>
+                <CampoNumero
+                  className="w-24"
+                  autoFocus={inicial?.id === p.id}
+                  valor={qtds[p.id] ?? 0}
+                  aoMudar={(v) => setQtds((q) => ({ ...q, [p.id]: Math.round(v) }))}
+                />
+              </li>
             ))}
-          </div>
-          <CampoNumero className="mt-4" rotulo="Quantos espetos ficaram prontos?" sufixo="espetos" grande autoFocus valor={qtd} aoMudar={(v) => setQtd(Math.round(v))} />
+          </ul>
 
-          {itens.length > 0 && qtd > 0 && (
+          {linhas.length > 0 && (
             <div className="mt-4 space-y-3">
-              <p className="text-sm text-stone-600">Quanto foi usado? Já vem calculado pela ficha — se pesou diferente, corrija.</p>
-              {itens.map((it) => {
-                const rendimento = qtd > 0 ? (it.usado * it.fator) / qtd : 0
-                const diferente = Math.abs(rendimento - it.porUnidade) >= 1 && it.fator > 1
+              <h3 className="font-extrabold">Para onde vai cada carne</h3>
+              {linhas.map((l) => {
+                const u = l.ins.unidade
+                const mais = daMais(l.ins.id)
+                const unico = l.partes.length === 1 ? l.partes[0] : null
+                const rendimento = unico && qtds[unico.produto.id] > 0 ? (l.usado * fatorDe(l.ins)) / qtds[unico.produto.id] : 0
+                const fichaUnico = unico?.produto.ficha.find((f) => f.insumoId === l.ins.id)?.qtd ?? 0
                 return (
-                  <div key={it.ins.id} className="rounded-xl border-2 border-stone-200 p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex-1 font-semibold">{it.ins.nome}</span>
-                      <CampoNumero
-                        className="w-36"
-                        sufixo={it.ins.unidade}
-                        valor={arred(it.usado * 1000) / 1000}
-                        aoMudar={(v) => setReal((r) => ({ ...r, [it.ins.id]: v }))}
-                      />
+                  <div key={l.ins.id} className="rounded-xl border-2 border-stone-200 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1 font-bold">{l.ins.nome}</span>
+                      <span className="text-sm text-stone-500">tem {fmtQtd(l.ins.estoque ?? 0, u)}</span>
                     </div>
-                    <div className="mt-1 text-xs text-stone-500">
-                      Tem em estoque: {fmtQtd(it.ins.estoque ?? 0, it.ins.unidade)}
-                      {it.usado > (it.ins.estoque ?? 0) && <b className="text-red-600"> — vai ficar negativo, lance a compra antes</b>}
+                    <ul className="mt-1 text-sm">
+                      {l.partes.map((x) => (
+                        <li key={x.produto.id} className="flex justify-between">
+                          <span>
+                            → {qtds[x.produto.id]} {x.produto.nome}
+                          </span>
+                          <b>{fmtQtd(x.qtd * l.fatorReal, u)}</b>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-2 text-sm">
+                      <span>Usado no total (pesado):</span>
+                      <CampoNumero className="w-32" sufixo={u} valor={arred(l.usado * 1000) / 1000} aoMudar={(v) => setReal((r) => ({ ...r, [l.ins.id]: v }))} />
+                      <span className={`ml-auto font-bold ${l.sobra < -0.0005 ? 'text-red-600' : 'text-emerald-700'}`}>
+                        {l.sobra < -0.0005 ? `faltam ${fmtQtd(-l.sobra, u)} — lance a compra antes` : `sobra ${fmtQtd(l.sobra, u)}`}
+                      </span>
                     </div>
-                    {it.fator > 1 && (
-                      <div className={`mt-1 text-sm ${diferente ? 'font-bold text-amber-700' : 'text-stone-600'}`}>
-                        Rendimento: {Math.round(rendimento)} {unidadeFicha(it.ins.unidade)} por espeto (ficha: {it.porUnidade} {unidadeFicha(it.ins.unidade)})
-                        {diferente && (
-                          <button className="ml-2 underline" onClick={() => atualizarFicha(it.ins.id, rendimento)}>
-                            usar {Math.round(rendimento)} na ficha
+                    {Math.abs(l.fatorReal - 1) >= 0.01 && (
+                      <div className="mt-1 text-sm font-semibold text-amber-700">
+                        Pesou {l.fatorReal > 1 ? `${Math.round((l.fatorReal - 1) * 100)}% a mais` : `${Math.round((1 - l.fatorReal) * 100)}% a menos`} que a ficha.
+                        {unico && Math.abs(rendimento - fichaUnico) >= 1 && (
+                          <button className="ml-2 underline" onClick={() => atualizarFicha(l.ins.id, unico.produto.id, rendimento)}>
+                            usar {Math.round(rendimento)} {unidadeFicha(u)} na ficha do {unico.produto.nome}
                           </button>
                         )}
+                      </div>
+                    )}
+                    {l.sobra > 0 && mais.length > 0 && (
+                      <div className="mt-1 text-xs text-stone-600">
+                        Com a sobra ainda dá: {mais.map((m) => `+${m.n} ${m.produto.nome.toLowerCase()}`).join(' ou ')}
                       </div>
                     )}
                   </div>
@@ -379,8 +521,8 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
               })}
             </div>
           )}
-          <button className={`${btn.primario} mt-4 w-full py-4 text-lg`} disabled={!produto || qtd <= 0} onClick={salvar}>
-            Somar {qtd > 0 ? qtd : ''} espetos prontos
+          <button className={`${btn.primario} mt-4 w-full py-4 text-lg`} disabled={total <= 0} onClick={salvar}>
+            Somar {total > 0 ? total : ''} espetos prontos
           </button>
         </>
       )}

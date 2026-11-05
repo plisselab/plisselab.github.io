@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import type { Caixa, Categoria, Config, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
 
@@ -182,6 +183,22 @@ const PRODUTOS_INICIAIS: Produto[] = [
   espeto('p-carne', 'Carne', '🥩', 10, 'ins-carne', 100),
   espeto('p-frango', 'Frango', '🍗', 8, 'ins-frango', 100),
   espeto('p-linguica', 'Linguiça', '🌭', 8, 'ins-linguica', 100),
+  {
+    id: 'p-misto',
+    nome: 'Misto',
+    categoria: 'espeto',
+    preco: 10,
+    emoji: '🍢',
+    custoDireto: 0.05,
+    ativo: true,
+    estoque: 0,
+    ficha: [
+      { insumoId: 'ins-carne', qtd: 60 },
+      { insumoId: 'ins-linguica', qtd: 50 },
+      { insumoId: 'ins-palito', qtd: 1 },
+      { insumoId: 'ins-tempero', qtd: 3 },
+    ],
+  },
   espeto('p-coracao', 'Coração', '❤️', 9, 'ins-coracao', 80),
   espeto('p-queijo', 'Queijo coalho', '🧀', 9, 'ins-queijo', 70),
   {
@@ -209,7 +226,7 @@ const PRODUTOS_INICIAIS: Produto[] = [
       { insumoId: 'ins-farofa', qtd: 30 },
       { insumoId: 'ins-marmita', qtd: 1 },
     ],
-    componentes: [{ id: 'c-espeto', nome: 'Espeto', qtd: 1, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-coracao', 'p-queijo'] }],
+    componentes: [{ id: 'c-espeto', nome: 'Espeto', qtd: 1, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-misto', 'p-coracao', 'p-queijo'] }],
   },
   {
     id: 'p-combo3',
@@ -221,7 +238,7 @@ const PRODUTOS_INICIAIS: Produto[] = [
     ativo: true,
     ficha: [],
     componentes: [
-      { id: 'c-espetos', nome: 'Espeto', qtd: 3, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-coracao', 'p-queijo'] },
+      { id: 'c-espetos', nome: 'Espeto', qtd: 3, opcoes: ['p-carne', 'p-frango', 'p-linguica', 'p-misto', 'p-coracao', 'p-queijo'] },
       { id: 'c-refri', nome: 'Refri', qtd: 1, opcoes: ['p-coca', 'p-guarana'] },
     ],
   },
@@ -257,6 +274,26 @@ export function useEspetoDados() {
   const [configSalva, setConfig] = useLocalStorage<Config>('espeto:config', CONFIG_INICIAL)
   const [movEstoque, setMovEstoque] = useLocalStorage<MovEstoque[]>('espeto:estoque-mov', [])
   const config = { ...CONFIG_INICIAL, ...configSalva }
+
+  // Quem já usava o sistema antes do espeto misto existir ganha ele uma vez (se apagar, não volta).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('espeto:migr-misto')) return
+      localStorage.setItem('espeto:migr-misto', '1')
+    } catch {
+      return
+    }
+    setProdutos((ps) => {
+      if (ps.some((p) => p.id === 'p-misto' || /misto/i.test(p.nome))) return ps
+      const misto = PRODUTOS_INICIAIS.find((p) => p.id === 'p-misto')!
+      const ficha = misto.ficha.filter((f) => insumos.some((i) => i.id === f.insumoId))
+      const pos = ps.findIndex((p) => p.id === 'p-linguica')
+      const novo = { ...misto, ficha }
+      return pos >= 0 ? [...ps.slice(0, pos + 1), novo, ...ps.slice(pos + 1)] : [...ps, novo]
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const caixaAberto = caixas.find((c) => !c.fechadoEm) ?? null
   return {
     insumos,
