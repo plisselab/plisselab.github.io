@@ -8,7 +8,9 @@ import {
   arred,
   brl,
   consumoDosItens,
+  consumoInsumosDosItens,
   custoCompleto,
+  moverEstoqueInsumos,
   moverEstoqueProdutos,
   novoId,
   taxaDaForma,
@@ -31,7 +33,7 @@ const chaveEscolhas = (e?: Escolha[]) => (e ?? []).map((x) => `${x.produtoId}:${
 type Filtro = 'todos' | Categoria
 
 export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa') => void }) {
-  const { produtos, setProdutos, insumos, pedidos, setPedidos, caixaAberto, config } = dados
+  const { produtos, setProdutos, insumos, setInsumos, pedidos, setPedidos, caixaAberto, config } = dados
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [cliente, setCliente] = useState('')
   const [viagem, setViagem] = useState(false)
@@ -58,6 +60,20 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     const est = produtos.find((p) => p.id === id)?.estoque
     return est === undefined ? undefined : est - (consumoCarrinho[id] ?? 0)
   }
+  const insumosCarrinho = useMemo(() => consumoInsumosDosItens(linhas, produtos, insumos), [linhas, produtos, insumos])
+  /** Quantas unidades ainda dá para vender pelo estoque de insumos controlados (ex.: baião). undefined = sem limite. */
+  const limiteInsumos = (p: Produto) => {
+    if (p.estoque !== undefined) return undefined
+    let lim: number | undefined
+    for (const f of p.ficha) {
+      const ins = insumos.find((i) => i.id === f.insumoId)
+      if (!ins || ins.estoque === undefined || f.qtd <= 0) continue
+      const porcao = f.qtd / (ins.unidade === 'kg' || ins.unidade === 'L' ? 1000 : 1)
+      const n = Math.floor((ins.estoque - (insumosCarrinho[ins.id] ?? 0)) / porcao + 1e-6)
+      lim = lim === undefined ? n : Math.min(lim, n)
+    }
+    return lim
+  }
   /** Combo esgotado quando algum componente não tem opções suficientes. */
   const comboDisponivel = (p: Produto) =>
     (p.componentes ?? []).every((c) => {
@@ -71,7 +87,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     })
   const restanteBotao = (p: Produto) => {
     if (p.componentes?.length && !comboDisponivel(p)) return 0
-    return restante(p.id)
+    const valores = [restante(p.id), limiteInsumos(p)].filter((v): v is number => v !== undefined)
+    return valores.length ? Math.min(...valores) : undefined
   }
 
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
@@ -110,6 +127,9 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
         const r = restante(pid)
         return r !== undefined && r < q
       })) return
+      const prod = prodPorId(linha.produtoId)
+      const lim = prod ? limiteInsumos(prod) : undefined
+      if (lim !== undefined && lim <= 0) return
     }
     setLinhas((ls) => ls.map((l) => (l.id === id ? { ...l, qtd: l.qtd + delta } : l)).filter((l) => l.qtd > 0))
   }
@@ -174,6 +194,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
       entregue: false,
     }
     setPedidos((ps) => [...ps, pedido])
+    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(itens, produtos, insumos), -1))
     setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
     if (config.imprimirAoFinalizar) imprimirPedido(pedido, config)
     setUltimo(pedido)

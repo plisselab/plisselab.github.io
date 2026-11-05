@@ -76,6 +76,47 @@ export function consumoDosItens(itens: Pick<ItemPedido, 'produtoId' | 'qtd' | 'e
 }
 
 /** Aplica uma baixa (sinal −1) ou devolução (+1) no estoque dos produtos controlados. */
+/**
+ * Insumos controlados que saem do estoque na venda (em kg/un do insumo).
+ * Vale para produtos SEM estoque de unidades prontas — ex.: o baião da jantinha.
+ * Espetos com estoque de prontos já baixaram a carne na montagem, então não entram aqui.
+ */
+export function consumoInsumosDosItens(itens: Pick<ItemPedido, 'produtoId' | 'qtd' | 'escolhas'>[], produtos: Produto[], insumos: Insumo[]) {
+  const m: Record<string, number> = {}
+  const somar = (produtoId: string, vezes: number) => {
+    const p = produtos.find((x) => x.id === produtoId)
+    if (!p || p.estoque !== undefined) return
+    for (const f of p.ficha) {
+      const ins = insumos.find((i) => i.id === f.insumoId)
+      if (!ins || ins.estoque === undefined) continue
+      m[ins.id] = (m[ins.id] ?? 0) + (f.qtd / fatorFicha(ins.unidade)) * vezes
+    }
+  }
+  for (const i of itens) {
+    somar(i.produtoId, i.qtd)
+    for (const e of i.escolhas ?? []) somar(e.produtoId, e.qtd * i.qtd)
+  }
+  return m
+}
+
+export function moverEstoqueInsumos(insumos: Insumo[], consumo: Record<string, number>, sinal: 1 | -1) {
+  return insumos.map((i) =>
+    i.estoque !== undefined && consumo[i.id] ? { ...i, estoque: Math.round((i.estoque + sinal * consumo[i.id]) * 1000) / 1000 } : i,
+  )
+}
+
+/** Quantas unidades de cada produto dá para fazer com o estoque deste insumo (ex.: 6 kg de baião → 24 jantinhas). */
+export function rendePara(insumo: Insumo, produtos: Produto[], estoque = insumo.estoque ?? 0) {
+  return produtos
+    .filter((p) => p.ativo)
+    .flatMap((p) => {
+      const f = p.ficha.find((x) => x.insumoId === insumo.id)
+      if (!f || f.qtd <= 0) return []
+      const porcao = f.qtd / fatorFicha(insumo.unidade)
+      return [{ produto: p, porcao: f.qtd, unidadePorcao: unidadeFicha(insumo.unidade), qtd: Math.max(0, Math.floor(estoque / porcao + 1e-6)) }]
+    })
+}
+
 export function moverEstoqueProdutos(produtos: Produto[], consumo: Record<string, number>, sinal: 1 | -1) {
   return produtos.map((p) =>
     p.estoque !== undefined && consumo[p.id] ? { ...p, estoque: p.estoque + sinal * consumo[p.id] } : p,
@@ -104,7 +145,7 @@ const INSUMOS_INICIAIS: Insumo[] = [
   { id: 'ins-tempero', nome: 'Sal grosso + tempero', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
   { id: 'ins-farofa', nome: 'Farofa', unidade: 'kg', precoCompra: 14, qtdCompra: 1 },
   { id: 'ins-guardanapo', nome: 'Guardanapo/saquinho', unidade: 'pct', precoCompra: 10, qtdCompra: 1 },
-  { id: 'ins-baiao', nome: 'Baião (arroz + feijão + temperos)', unidade: 'kg', precoCompra: 12, qtdCompra: 1 },
+  { id: 'ins-baiao', nome: 'Baião (arroz + feijão + temperos)', unidade: 'kg', precoCompra: 12, qtdCompra: 1, estoque: 0 },
   { id: 'ins-vinagrete', nome: 'Vinagrete', unidade: 'kg', precoCompra: 10, qtdCompra: 1 },
   { id: 'ins-mandioca', nome: 'Mandioca cozida', unidade: 'kg', precoCompra: 8, qtdCompra: 1 },
   { id: 'ins-marmita', nome: 'Marmitex/embalagem', unidade: 'un', precoCompra: 45, qtdCompra: 100 },

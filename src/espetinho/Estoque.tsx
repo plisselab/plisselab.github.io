@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { arred, brl, custoUnitarioInsumo, dataHora, novoId, unidadeFicha, type Dados } from './dados'
+import { arred, brl, custoUnitarioInsumo, dataHora, novoId, rendePara, unidadeFicha, type Dados } from './dados'
 import type { Insumo, MovEstoque, Movimento, Produto } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 
@@ -7,6 +7,7 @@ const fmtQtd = (v: number, u: string) => `${(Math.round(v * 1000) / 1000).toLoca
 
 type Acao =
   | { tipo: 'compraInsumo'; insumo: Insumo }
+  | { tipo: 'preparo'; insumo: Insumo }
   | { tipo: 'compraProduto'; produto: Produto }
   | { tipo: 'montar'; produto?: Produto }
   | { tipo: 'contarInsumo'; insumo: Insumo }
@@ -37,7 +38,11 @@ export default function Estoque({ dados }: { dados: Dados }) {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
-          <h2 className="text-lg font-extrabold">🥩 Carnes e insumos (em kg)</h2>
+          <h2 className="text-lg font-extrabold">🥩 Carnes, baião e insumos (em kg)</h2>
+          <p className="text-xs text-stone-500">
+            <b>Chegou compra</b>: carne/insumo comprado. <b>Preparei</b>: algo feito aqui (ex.: baião) — pese quanto rendeu. O baião sai do estoque a cada jantinha
+            vendida, pela porção da ficha.
+          </p>
           <ul className="mt-3 divide-y divide-stone-100">
             {insumosControlados.map((i) => (
               <li key={i.id} className="flex flex-wrap items-center gap-2 py-2">
@@ -46,11 +51,22 @@ export default function Estoque({ dados }: { dados: Dados }) {
                   <div className="text-xs text-stone-500">
                     custo {brl(custoUnitarioInsumo(i))}/{i.unidade}
                   </div>
+                  {rendePara(i, produtos).length > 0 && (
+                    <div className="text-xs font-semibold text-emerald-700">
+                      dá para{' '}
+                      {rendePara(i, produtos)
+                        .map((x) => `~${x.qtd} ${x.produto.nome.toLowerCase()} (${x.porcao} ${x.unidadePorcao})`)
+                        .join(' · ')}
+                    </div>
+                  )}
                 </div>
                 <div className={`text-xl font-black ${(i.estoque ?? 0) <= 0 ? 'text-red-600' : ''}`}>{fmtQtd(i.estoque ?? 0, i.unidade)}</div>
                 <div className="flex gap-1">
                   <button className={btn.secundario + ' !px-3 !py-1.5 text-sm'} onClick={() => setAcao({ tipo: 'compraInsumo', insumo: i })}>
                     + Chegou compra
+                  </button>
+                  <button className={btn.secundario + ' !px-3 !py-1.5 text-sm'} onClick={() => setAcao({ tipo: 'preparo', insumo: i })}>
+                    + Preparei
                   </button>
                   <button className={btn.secundario + ' !px-3 !py-1.5 text-sm'} onClick={() => setAcao({ tipo: 'contarInsumo', insumo: i })}>
                     Contagem
@@ -127,7 +143,9 @@ export default function Estoque({ dados }: { dados: Dados }) {
           {(verTudo ? historico : historico.slice(0, 20)).map((m) => (
             <li key={m.id} className="flex flex-wrap gap-x-3 py-2">
               <span className="w-24 text-stone-500">{dataHora(m.criadoEm)}</span>
-              <span className="w-24 font-bold capitalize">{m.tipo === 'montagem' ? 'Montagem' : m.tipo === 'compra' ? 'Compra' : 'Contagem'}</span>
+              <span className="w-24 font-bold capitalize">
+                {m.tipo === 'montagem' ? 'Montagem' : m.tipo === 'compra' ? 'Compra' : m.tipo === 'preparo' ? 'Preparo' : 'Contagem'}
+              </span>
               <span className="min-w-0 flex-1">
                 {m.nome}: <b className={m.qtd < 0 ? 'text-red-700' : 'text-emerald-700'}>{m.qtd > 0 ? '+' : ''}{fmtQtd(m.qtd, m.unidade)}</b>
                 {m.valor ? ` · ${brl(m.valor)}` : ''}
@@ -145,6 +163,7 @@ export default function Estoque({ dados }: { dados: Dados }) {
       </section>
 
       {acao?.tipo === 'compraInsumo' && <ModalCompra dados={dados} alvo={{ insumo: acao.insumo }} aoFechar={() => setAcao(null)} />}
+      {acao?.tipo === 'preparo' && <ModalCompra dados={dados} alvo={{ insumo: acao.insumo }} preparo aoFechar={() => setAcao(null)} />}
       {acao?.tipo === 'compraProduto' && <ModalCompra dados={dados} alvo={{ produto: acao.produto }} aoFechar={() => setAcao(null)} />}
       {acao?.tipo === 'montar' && <ModalMontar dados={dados} inicial={acao.produto} aoFechar={() => setAcao(null)} />}
       {acao?.tipo === 'contarInsumo' && <ModalContagem dados={dados} alvo={{ insumo: acao.insumo }} aoFechar={() => setAcao(null)} />}
@@ -163,7 +182,17 @@ function custoMedio(estoqueAtual: number, custoAtual: number, qtd: number, valor
   return base + qtd > 0 ? (base * custoAtual + valor) / (base + qtd) : custoAtual
 }
 
-function ModalCompra({ dados, alvo, aoFechar }: { dados: Dados; alvo: { insumo?: Insumo; produto?: Produto }; aoFechar: () => void }) {
+function ModalCompra({
+  dados,
+  alvo,
+  aoFechar,
+  preparo,
+}: {
+  dados: Dados
+  alvo: { insumo?: Insumo; produto?: Produto }
+  aoFechar: () => void
+  preparo?: boolean
+}) {
   const { insumo, produto } = alvo
   const unidade = insumo ? insumo.unidade : 'un'
   const nome = insumo?.nome ?? produto!.nome
@@ -172,18 +201,21 @@ function ModalCompra({ dados, alvo, aoFechar }: { dados: Dados; alvo: { insumo?:
   const [daGaveta, setDaGaveta] = useState(false)
   const unit = qtd > 0 ? valor / qtd : 0
 
+  const rende = insumo ? rendePara(insumo, dados.produtos, (insumo.estoque ?? 0) + qtd) : []
+
   function salvar() {
     if (insumo) {
-      const novo = custoMedio(insumo.estoque ?? 0, custoUnitarioInsumo(insumo), qtd, valor)
+      // sem valor informado, mantém o custo que já estava cadastrado
+      const novo = valor > 0 ? custoMedio(insumo.estoque ?? 0, custoUnitarioInsumo(insumo), qtd, valor) : custoUnitarioInsumo(insumo)
       dados.setInsumos((is) =>
         is.map((i) => (i.id === insumo.id ? { ...i, estoque: arred((i.estoque ?? 0) + qtd), precoCompra: arred(novo * 1000) / 1000, qtdCompra: 1 } : i)),
       )
     } else if (produto) {
-      const novo = custoMedio(produto.estoque ?? 0, produto.custoDireto, qtd, valor)
+      const novo = valor > 0 ? custoMedio(produto.estoque ?? 0, produto.custoDireto, qtd, valor) : produto.custoDireto
       dados.setProdutos((ps) => ps.map((p) => (p.id === produto.id ? { ...p, estoque: (p.estoque ?? 0) + qtd, custoDireto: arred(novo) } : p)))
     }
-    registrar(dados, { tipo: 'compra', insumoId: insumo?.id, produtoId: produto?.id, nome, qtd, unidade, valor })
-    if (daGaveta && dados.caixaAberto) {
+    registrar(dados, { tipo: preparo ? 'preparo' : 'compra', insumoId: insumo?.id, produtoId: produto?.id, nome, qtd, unidade, valor: valor || undefined })
+    if (daGaveta && dados.caixaAberto && valor > 0) {
       const mov: Movimento = {
         id: novoId(),
         tipo: 'sangria',
@@ -198,15 +230,38 @@ function ModalCompra({ dados, alvo, aoFechar }: { dados: Dados; alvo: { insumo?:
   }
 
   return (
-    <Modal titulo={`Chegou compra — ${nome}`} aberto aoFechar={aoFechar}>
+    <Modal titulo={`${preparo ? 'Preparei' : 'Chegou compra'} — ${nome}`} aberto aoFechar={aoFechar}>
       <div className="grid grid-cols-2 gap-3">
-        <CampoNumero rotulo="Quantidade que chegou" sufixo={unidade} grande autoFocus valor={qtd} aoMudar={setQtd} />
-        <CampoNumero rotulo="Valor pago (total)" prefixo="R$" grande valor={valor} aoMudar={setValor} />
+        <CampoNumero rotulo={preparo ? 'Quanto rendeu (pesado)' : 'Quantidade que chegou'} sufixo={unidade} grande autoFocus valor={qtd} aoMudar={setQtd} />
+        <CampoNumero
+          rotulo={preparo ? 'Gasto nos ingredientes (opcional)' : 'Valor pago (total)'}
+          prefixo="R$"
+          grande
+          valor={valor}
+          aoMudar={setValor}
+        />
       </div>
+      {preparo && (
+        <p className="mt-2 text-xs text-stone-500">
+          Some o que gastou (arroz, feijão, bacon, gás…). Se deixar em branco, mantém o custo por {unidade} já cadastrado.
+        </p>
+      )}
       {qtd > 0 && valor > 0 && (
         <p className="mt-3 rounded-xl bg-stone-100 p-3 text-center">
-          Saiu a <b>{brl(unit)}</b> por {unidade}. O custo usado nos espetos passa a ser a média com o que já tinha.
+          Saiu a <b>{brl(unit)}</b> por {unidade}. O custo passa a ser a média com o que já tinha.
         </p>
+      )}
+      {qtd > 0 && rende.length > 0 && (
+        <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-center text-emerald-900">
+          Com o que vai ficar ({((insumo?.estoque ?? 0) + qtd).toLocaleString('pt-BR')} {unidade}), dá para:
+          {rende.map((x) => (
+            <div key={x.produto.id} className="text-2xl font-black">
+              {x.qtd} {x.produto.nome.toLowerCase()}
+              <span className="text-sm font-semibold"> ({x.porcao} {x.unidadePorcao} cada)</span>
+            </div>
+          ))}
+          <div className="text-xs">Para mudar a porção, edite a ficha da jantinha em Cadastros.</div>
+        </div>
       )}
       {dados.caixaAberto && (
         <label className="mt-3 flex items-center gap-2 text-sm font-semibold">
@@ -215,7 +270,7 @@ function ModalCompra({ dados, alvo, aoFechar }: { dados: Dados; alvo: { insumo?:
         </label>
       )}
       <button className={`${btn.primario} mt-4 w-full`} disabled={qtd <= 0} onClick={salvar}>
-        Lançar entrada
+        {preparo ? 'Somar ao estoque' : 'Lançar entrada'}
       </button>
     </Modal>
   )

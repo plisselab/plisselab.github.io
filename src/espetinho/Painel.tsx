@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import { NOMES_FORMA, brl, consumoDosItens, hora, moverEstoqueProdutos, pct, resumirCaixa, type Dados } from './dados'
+import { NOMES_FORMA, brl, consumoDosItens, consumoInsumosDosItens, hora, moverEstoqueInsumos, moverEstoqueProdutos, pct, resumirCaixa, rendePara, type Dados } from './dados'
 import { imprimirPedido } from './impressao'
 import type { Pedido } from './tipos'
 import { Cartao, btn } from './ui'
 
 export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa' | 'estoque') => void }) {
-  const { caixaAberto, pedidos, setPedidos, produtos, setProdutos, movEstoque, config } = dados
+  const { caixaAberto, pedidos, setPedidos, produtos, setProdutos, insumos, setInsumos, movEstoque, config } = dados
   const [verTodos, setVerTodos] = useState(false)
 
   if (!caixaAberto) {
@@ -26,12 +26,18 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
   const espetosProntos = produtos.filter((p) => p.categoria === 'espeto' && p.estoque !== undefined)
   const totalProntos = espetosProntos.reduce((s, p) => s + Math.max(0, p.estoque ?? 0), 0)
   const linhas = r.porProduto.filter((l) => l.vendidos > 0 || l.final !== undefined)
+  // acompanhamentos preparados em kg (baião…) que limitam produtos sem estoque de prontos
+  const preparados = insumos
+    .filter((i) => i.estoque !== undefined)
+    .map((i) => ({ ins: i, rende: rendePara(i, produtos).filter((x) => x.produto.estoque === undefined) }))
+    .filter((x) => x.rende.length)
 
   const atualizar = (id: string, mudanca: Partial<Pedido>) => setPedidos((ps) => ps.map((p) => (p.id === id ? { ...p, ...mudanca } : p)))
 
   function cancelar(p: Pedido) {
     if (!confirm(`Cancelar o pedido Nº ${p.numero}? Ele sai do faturamento e os itens voltam para o estoque.`)) return
     atualizar(p.id, { cancelado: true })
+    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(p.itens, produtos, insumos), 1))
     setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(p.itens), 1))
   }
 
@@ -94,6 +100,24 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
               )
             })}
           </ul>
+          {preparados.length > 0 && (
+            <div className="mt-4 space-y-2 border-t-2 border-stone-100 pt-3">
+              {preparados.map(({ ins, rende }) => (
+                <div key={ins.id} className="flex flex-wrap items-center gap-2">
+                  <span className="flex-1 font-bold">🍚 {ins.nome}</span>
+                  <span className="text-sm text-stone-600">{(ins.estoque ?? 0).toLocaleString('pt-BR')} {ins.unidade}</span>
+                  {rende.map((x) => (
+                    <span
+                      key={x.produto.id}
+                      className={`rounded-full px-2.5 py-0.5 text-sm font-bold ${x.qtd <= config.alertaEstoque ? 'bg-red-600 text-white' : 'bg-emerald-100 text-emerald-800'}`}
+                    >
+                      dá {x.qtd} {x.produto.nome.toLowerCase()}
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">

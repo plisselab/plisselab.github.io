@@ -150,7 +150,7 @@ export interface Config {
   alertaEstoque: number
 }
 
-export type TipoMovEstoque = 'compra' | 'montagem' | 'contagem'
+export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'
 
 /** Histórico de estoque: compras que chegaram, espetos montados e contagens/perdas. */
 export interface MovEstoque {
