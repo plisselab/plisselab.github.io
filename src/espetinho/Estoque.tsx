@@ -356,10 +356,51 @@ function ModalCompra({
  */
 function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Produto; aoFechar: () => void }) {
   const opcoes = dados.produtos.filter((p) => p.categoria === 'espeto' && p.estoque !== undefined)
-  const [qtds, setQtds] = useState<Record<string, number>>({})
+  // quantidades digitadas à mão (o resto o sistema calcula pela carne que tem)
+  const [manual, setManual] = useState<Record<string, number>>({})
+  const [auto, setAuto] = useState(true)
+  // gramas por espeto escolhidos nesta montagem (sobrepõem a ficha): "produtoId:insumoId" → g
+  const [gramas, setGramas] = useState<Record<string, number>>({})
+  const [salvarFicha, setSalvarFicha] = useState(true)
   // peso real usado, quando pesou diferente da ficha (na unidade do insumo)
   const [real, setReal] = useState<Record<string, number>>({})
   const fatorDe = (ins: Insumo) => (ins.unidade === 'kg' || ins.unidade === 'L' ? 1000 : 1)
+  const insumoDe = (id: string) => dados.insumos.find((i) => i.id === id)
+  const gr = (p: Produto, f: { insumoId: string; qtd: number }) => gramas[`${p.id}:${f.insumoId}`] ?? f.qtd
+  /** Insumos em kg/litro com estoque (as carnes) que vão neste espeto. */
+  const carnesDe = (p: Produto) =>
+    p.ficha.filter((f) => {
+      const ins = insumoDe(f.insumoId)
+      return ins && ins.estoque !== undefined && fatorDe(ins) > 1 && gr(p, f) > 0
+    })
+
+  // Calculadora: cada espeto de uma carne só (carne, frango, linguiça…) recebe toda a carne que sobra
+  // depois dos que foram digitados à mão (ex.: os mistos). Se dois espetos usam a mesma carne, divide igual.
+  const calculados: Record<string, number> = {}
+  if (auto) {
+    const usadoManual: Record<string, number> = {}
+    for (const p of opcoes) {
+      const n = manual[p.id]
+      if (!n) continue
+      for (const f of carnesDe(p)) usadoManual[f.insumoId] = (usadoManual[f.insumoId] ?? 0) + (gr(p, f) * n) / 1000
+    }
+    const porCarne = new Map<string, Produto[]>()
+    for (const p of opcoes) {
+      if (manual[p.id] !== undefined) continue
+      const cs = carnesDe(p)
+      if (cs.length !== 1) continue
+      porCarne.set(cs[0].insumoId, [...(porCarne.get(cs[0].insumoId) ?? []), p])
+    }
+    for (const [insumoId, ps] of porCarne) {
+      const ins = insumoDe(insumoId)!
+      const livreKg = Math.max(0, (ins.estoque ?? 0) - (usadoManual[insumoId] ?? 0)) / ps.length
+      for (const p of ps) {
+        const g = gr(p, carnesDe(p)[0])
+        calculados[p.id] = Math.floor((livreKg * 1000) / g + 1e-6)
+      }
+    }
+  }
+  const qtds: Record<string, number> = { ...calculados, ...manual }
 
   // consumo pela ficha: insumo → produto → quantidade (na unidade do insumo)
   const porInsumo = new Map<string, { ins: Insumo; partes: { produto: Produto; qtd: number }[] }>()
@@ -368,9 +409,9 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
     if (n <= 0) continue
     for (const f of p.ficha) {
       const ins = dados.insumos.find((i) => i.id === f.insumoId)
-      if (!ins || ins.estoque === undefined || f.qtd <= 0) continue
+      if (!ins || ins.estoque === undefined || gr(p, f) <= 0) continue
       const linha = porInsumo.get(ins.id) ?? { ins, partes: [] }
-      linha.partes.push({ produto: p, qtd: (f.qtd * n) / fatorDe(ins) })
+      linha.partes.push({ produto: p, qtd: (gr(p, f) * n) / fatorDe(ins) })
       porInsumo.set(ins.id, linha)
     }
   }
@@ -387,14 +428,14 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
   function daMais(insumoId: string) {
     return opcoes.flatMap((p) => {
       const f = p.ficha.find((x) => x.insumoId === insumoId)
-      if (!f || f.qtd <= 0) return []
+      if (!f || gr(p, f) <= 0) return []
       let n = Infinity
       for (const g of p.ficha) {
         const ins = dados.insumos.find((i) => i.id === g.insumoId)
-        if (!ins || ins.estoque === undefined || g.qtd <= 0) continue
+        if (!ins || ins.estoque === undefined || gr(p, g) <= 0) continue
         const linha = linhas.find((l) => l.ins.id === ins.id)
         const resta = linha ? linha.sobra : ins.estoque
-        n = Math.min(n, Math.floor(Math.max(0, resta) / (g.qtd / fatorDe(ins)) + 1e-6))
+        n = Math.min(n, Math.floor(Math.max(0, resta) / (gr(p, g) / fatorDe(ins)) + 1e-6))
       }
       return n === Infinity ? [] : [{ produto: p, n }]
     })
@@ -408,7 +449,16 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
         return l ? { ...i, estoque: arred(((i.estoque ?? 0) - l.usado) * 1000) / 1000 } : i
       }),
     )
-    dados.setProdutos((ps) => ps.map((p) => (qtds[p.id] > 0 ? { ...p, estoque: (p.estoque ?? 0) + qtds[p.id] } : p)))
+    dados.setProdutos((ps) =>
+      ps.map((p) => {
+        let x = p
+        if (qtds[p.id] > 0) x = { ...x, estoque: (x.estoque ?? 0) + qtds[p.id] }
+        // grava os gramas escolhidos na ficha do espeto (só dos espetos montados)
+        if (salvarFicha && qtds[p.id] > 0 && x.ficha.some((f) => gramas[`${p.id}:${f.insumoId}`] !== undefined))
+          x = { ...x, ficha: x.ficha.map((f) => ({ ...f, qtd: gramas[`${p.id}:${f.insumoId}`] ?? f.qtd })) }
+        return x
+      }),
+    )
     // um registro por espeto, com o peso real dividido na proporção da ficha
     const agora = new Date().toISOString()
     const novos: MovEstoque[] = opcoes
@@ -442,32 +492,90 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
         <p>Nenhum espeto com controle de estoque.</p>
       ) : (
         <>
-          <p className="text-sm text-stone-600">Digite quantos de cada espeto você montou. Pode lançar vários de uma vez (ex.: carne, linguiça e misto).</p>
+          <div className="rounded-xl bg-orange-50 p-3 text-sm text-orange-950">
+            <label className="flex items-center gap-2 font-bold">
+              <input type="checkbox" className="h-5 w-5 accent-orange-600" checked={auto} onChange={(e) => setAuto(e.target.checked)} />⚡ Calcular sozinho com toda a carne que tem
+            </label>
+            <p className="mt-1">
+              Ajuste os <b>gramas por espeto</b> e o sistema mostra quantos espetos dá. Vai fazer <b>misto</b>? Digite antes quantos mistos — o resto da
+              carne vira espeto puro. Depois é só conferir e confirmar.
+            </p>
+          </div>
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-            {opcoes.map((p) => (
-              <li key={p.id} className={`flex items-center gap-2 rounded-xl border-2 p-2 ${qtds[p.id] > 0 ? 'border-orange-400 bg-orange-50' : 'border-stone-200'}`}>
-                <Imagem emoji={p.emoji} imagem={p.imagem} className="h-9 w-9 shrink-0 rounded text-2xl" />
-                <div className="min-w-0 flex-1">
-                  <div className="font-bold">{p.nome}</div>
-                  <div className="truncate text-xs text-stone-500">
-                    {p.ficha
-                      .map((f) => {
-                        const ins = dados.insumos.find((i) => i.id === f.insumoId)
-                        return ins && ins.estoque !== undefined ? `${f.qtd} ${unidadeFicha(ins.unidade)} ${ins.nome.split(' ')[0].toLowerCase()}` : null
-                      })
-                      .filter(Boolean)
-                      .join(' + ') || 'sem insumo controlado'}
+            {opcoes.map((p) => {
+              const ehManual = manual[p.id] !== undefined
+              const ehAuto = !ehManual && calculados[p.id] !== undefined
+              const controlados = p.ficha.filter((f) => {
+                const ins = insumoDe(f.insumoId)
+                return ins && ins.estoque !== undefined && fatorDe(ins) > 1
+              })
+              return (
+                <li key={p.id} className={`rounded-xl border-2 p-2 ${qtds[p.id] > 0 ? 'border-orange-400 bg-orange-50' : 'border-stone-200'}`}>
+                  <div className="flex items-center gap-2">
+                    <Imagem emoji={p.emoji} imagem={p.imagem} className="h-9 w-9 shrink-0 rounded text-2xl" />
+                    <div className="min-w-0 flex-1">
+                      <div className="font-bold">{p.nome}</div>
+                      <div className="text-xs font-semibold">
+                        {ehAuto ? (
+                          <span className="text-emerald-700">⚡ calculado pela carne</span>
+                        ) : ehManual ? (
+                          <button className="text-orange-700 underline" onClick={() =>
+                              setManual((m) => {
+                                const resto = { ...m }
+                                delete resto[p.id]
+                                return resto
+                              })
+                            }>
+                            digitado · voltar ao cálculo
+                          </button>
+                        ) : (
+                          <span className="text-stone-500">digite a quantidade</span>
+                        )}
+                      </div>
+                    </div>
+                    <CampoNumero
+                      className="w-24"
+                      grande
+                      autoFocus={inicial?.id === p.id}
+                      valor={qtds[p.id] ?? 0}
+                      aoMudar={(v) => setManual((m) => ({ ...m, [p.id]: Math.round(v) }))}
+                    />
                   </div>
-                </div>
-                <CampoNumero
-                  className="w-24"
-                  autoFocus={inicial?.id === p.id}
-                  valor={qtds[p.id] ?? 0}
-                  aoMudar={(v) => setQtds((q) => ({ ...q, [p.id]: Math.round(v) }))}
-                />
-              </li>
-            ))}
+                  {controlados.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2 border-t border-stone-200/70 pt-2">
+                      {controlados.map((f) => {
+                        const ins = insumoDe(f.insumoId)!
+                        const chave = `${p.id}:${f.insumoId}`
+                        return (
+                          <div key={f.insumoId} className="flex items-center gap-1 text-xs">
+                            <CampoNumero
+                              className="w-24"
+                              sufixo="g"
+                              valor={gr(p, f)}
+                              aoMudar={(v) => setGramas((g) => ({ ...g, [chave]: Math.round(v) }))}
+                            />
+                            <span className="text-stone-600">
+                              de {ins.nome.split(' ')[0].toLowerCase()}
+                              {gramas[chave] !== undefined && gramas[chave] !== f.qtd && <span className="block text-amber-700">ficha: {f.qtd} g</span>}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
+          {Object.entries(gramas).some(([k, v]) => {
+            const [pid, iid] = k.split(':')
+            return qtds[pid] > 0 && dados.produtos.find((x) => x.id === pid)?.ficha.find((f) => f.insumoId === iid)?.qtd !== v
+          }) && (
+            <label className="mt-2 flex items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" className="h-5 w-5 accent-orange-600" checked={salvarFicha} onChange={(e) => setSalvarFicha(e.target.checked)} />
+              Guardar esses gramas na ficha dos espetos (o custo e as próximas montagens usam o novo peso)
+            </label>
+          )}
 
           {linhas.length > 0 && (
             <div className="mt-4 space-y-3">
@@ -477,7 +585,8 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
                 const mais = daMais(l.ins.id)
                 const unico = l.partes.length === 1 ? l.partes[0] : null
                 const rendimento = unico && qtds[unico.produto.id] > 0 ? (l.usado * fatorDe(l.ins)) / qtds[unico.produto.id] : 0
-                const fichaUnico = unico?.produto.ficha.find((f) => f.insumoId === l.ins.id)?.qtd ?? 0
+                const fUnico = unico?.produto.ficha.find((f) => f.insumoId === l.ins.id)
+                const fichaUnico = unico && fUnico ? gr(unico.produto, fUnico) : 0
                 return (
                   <div key={l.ins.id} className="rounded-xl border-2 border-stone-200 p-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -521,9 +630,11 @@ function ModalMontar({ dados, inicial, aoFechar }: { dados: Dados; inicial?: Pro
               })}
             </div>
           )}
-          <button className={`${btn.primario} mt-4 w-full py-4 text-lg`} disabled={total <= 0} onClick={salvar}>
-            Somar {total > 0 ? total : ''} espetos prontos
-          </button>
+          <div className="sticky -bottom-4 -mx-4 mt-4 bg-white px-4 pb-4 pt-2 sm:-bottom-6 sm:-mx-6 sm:px-6 sm:pb-6">
+            <button className={`${btn.primario} w-full py-4 text-lg`} disabled={total <= 0} onClick={salvar}>
+              ✔ Confirmar: somar {total > 0 ? total : ''} espetos prontos
+            </button>
+          </div>
         </>
       )}
     </Modal>
