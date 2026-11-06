@@ -549,24 +549,40 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
 }
 
 /** Reduz uma foto para caber no armazenamento do navegador. */
-export function reduzirImagem(arquivo: File, lado = 220): Promise<string> {
+/**
+ * Prepara uma foto para o botão do produto: corta o centro em 4:3, reduz para 480×360 e salva em JPEG.
+ * Fica nítida em tela de alta resolução e pequena o bastante (~30 KB) para caber no navegador e no backup.
+ */
+export function reduzirImagem(arquivo: Blob, largura = 480, altura = 360): Promise<string> {
   return new Promise((resolve, reject) => {
-    const leitor = new FileReader()
-    leitor.onerror = () => reject(leitor.error)
-    leitor.onload = () => {
-      const img = new Image()
-      img.onerror = () => reject(new Error('Imagem inválida'))
-      img.onload = () => {
-        const escala = Math.min(1, lado / Math.max(img.width, img.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.round(img.width * escala)
-        canvas.height = Math.round(img.height * escala)
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', 0.8))
-      }
-      img.src = leitor.result as string
+    const url = URL.createObjectURL(arquivo)
+    const img = new Image()
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Imagem inválida'))
     }
-    leitor.readAsDataURL(arquivo)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const alvo = largura / altura
+      // recorte central na proporção do botão
+      let sw = img.width
+      let sh = img.height
+      if (sw / sh > alvo) sw = sh * alvo
+      else sh = sw / alvo
+      const sx = (img.width - sw) / 2
+      const sy = (img.height - sh) / 2
+      const escala = Math.min(1, largura / sw)
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(sw * escala)
+      canvas.height = Math.round(sh * escala)
+      const ctx = canvas.getContext('2d')!
+      ctx.imageSmoothingQuality = 'high'
+      ctx.fillStyle = '#fff'
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', 0.82))
+    }
+    img.src = url
   })
 }
 

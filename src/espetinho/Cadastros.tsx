@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   CATEGORIAS,
   NOMES_CATEGORIA,
@@ -340,7 +340,39 @@ function EditorProduto({
   const [p, setP] = useState<Produto>(inicial)
   const [margemAlvo, setMargemAlvo] = useState(60)
   const [erroFoto, setErroFoto] = useState('')
+  const [arrastando, setArrastando] = useState(false)
   const set = (m: Partial<Produto>) => setP((x) => ({ ...x, ...m }))
+
+  async function usarFoto(f: Blob | null | undefined) {
+    if (!f || !f.type.startsWith('image/')) {
+      setErroFoto('Isso não é uma imagem.')
+      return
+    }
+    try {
+      const imagem = await reduzirImagem(f)
+      setP((x) => ({ ...x, imagem }))
+      setErroFoto('')
+    } catch {
+      setErroFoto('Não consegui abrir essa imagem.')
+    }
+  }
+
+  // Ctrl+V com uma imagem copiada (ex.: botão direito → Copiar imagem no Gemini) vira a foto do produto
+  useEffect(() => {
+    const colar = (e: ClipboardEvent) => {
+      const alvo = e.target as HTMLElement | null
+      if (alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA')) {
+        // num campo de texto, só pega se tiver imagem
+        if (![...(e.clipboardData?.items ?? [])].some((i) => i.type.startsWith('image/'))) return
+      }
+      const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'))
+      if (!item) return
+      e.preventDefault()
+      void usarFoto(item.getAsFile())
+    }
+    window.addEventListener('paste', colar)
+    return () => window.removeEventListener('paste', colar)
+  }, [])
   const custo = custoCompleto(p, insumos, produtos)
   const custoProprio = custoProduto(p, insumos)
   const opcoesCombo = produtos.filter((x) => x.id !== p.id && x.categoria !== 'combo')
@@ -354,25 +386,35 @@ function EditorProduto({
     <Modal titulo={novo ? 'Novo produto' : `Editar ${inicial.nome}`} aberto aoFechar={aoFechar} largo>
       <div className="grid gap-4 md:grid-cols-[180px_1fr]">
         <div>
-          <Imagem emoji={p.emoji} imagem={p.imagem} className="h-40 w-full rounded-2xl border-2 border-stone-200 text-7xl" />
+          <div
+            className={`relative overflow-hidden rounded-2xl border-2 ${arrastando ? 'border-dashed border-orange-500 bg-orange-50' : 'border-stone-200'}`}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setArrastando(true)
+            }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={(e) => {
+              e.preventDefault()
+              setArrastando(false)
+              void usarFoto(e.dataTransfer.files?.[0])
+            }}
+          >
+            <Imagem emoji={p.emoji} imagem={p.imagem} className="h-36 w-full text-7xl" />
+            {arrastando && <div className="absolute inset-0 flex items-center justify-center bg-orange-100/80 font-bold text-orange-800">Solte a foto aqui</div>}
+          </div>
           <label className={`${btn.secundario} mt-2 block cursor-pointer text-center text-sm`}>
-            📷 {p.imagem ? 'Trocar foto' : 'Usar foto'}
+            📷 {p.imagem ? 'Trocar foto' : 'Escolher foto'}
             <input
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={async (e) => {
-                const f = e.target.files?.[0]
-                if (!f) return
-                try {
-                  set({ imagem: await reduzirImagem(f) })
-                  setErroFoto('')
-                } catch {
-                  setErroFoto('Não consegui abrir essa imagem.')
-                }
+              onChange={(e) => {
+                void usarFoto(e.target.files?.[0])
+                e.target.value = ''
               }}
             />
           </label>
+          <p className="mt-1 text-center text-xs text-stone-500">ou arraste a foto, ou copie e aperte <b>Ctrl+V</b></p>
           {p.imagem && (
             <button className="mt-1 w-full text-sm text-red-600" onClick={() => set({ imagem: undefined })}>
               Remover foto
