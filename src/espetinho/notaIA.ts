@@ -38,6 +38,7 @@ export const NotaLidaSchema = z.object({
       embalagem: z.enum(['caixa', 'fardo', 'pacote', 'unidade', 'outro']),
       unidadesPorEmbalagem: z.number().nullable(),
       valorUnitario: z.number().nullable(),
+      desconto: z.number().nullable(),
       valorTotal: z.number(),
       duvida: z.boolean(),
     }),
@@ -57,11 +58,12 @@ Para cada linha de produto da nota:
 - embalagem: "caixa", "fardo", "pacote", "unidade" ou "outro", conforme a unidade da linha (CX, FD, PCT, UN, GF…).
 - unidadesPorEmbalagem: quantas unidades vêm em cada caixa/fardo/pacote quando a nota indica (ex.: "C/12", "12X350ML", "FD 6UN"). Se a embalagem é unidade, use 1. Se não dá para saber, use null.
 - valorUnitario: preço de cada embalagem na nota, ou null se não aparece.
-- valorTotal: valor total da linha (já com desconto da linha, se houver).
+- desconto: o desconto deste item, se a nota mostrar (ex.: linha "DESCONTO -2,50" ou "DESC. ITEM" logo abaixo do produto, ou coluna de desconto). Positivo, em reais. null se não houver.
+- valorTotal: quanto foi pago de verdade por esta linha: valor do item MENOS o desconto do item. Ex.: item 38,89 com desconto 3,00 → 35,89.
 - duvida: true se alguma parte da linha estava difícil de ler ou você precisou deduzir.
 
 Também: fornecedor (razão social ou nome fantasia do emitente), numeroNota, data (como aparece) e totalNota (valor total a pagar). Use null no que não aparecer.
-Não invente itens. Não inclua linhas de frete, desconto geral, impostos ou troco como itens — se houver desconto geral ou frete, conte em "observacao".
+Não invente itens. Linhas de desconto de um item não são itens: some no "desconto" do produto de cima. Não inclua frete, desconto geral, impostos ou troco como itens — se houver desconto geral ou frete, conte em "observacao".
 Valores em reais como número (ex.: 4,59 → 4.59).`
 
 export interface Anexo {
