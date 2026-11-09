@@ -26,8 +26,10 @@ import {
   NOMES_CANAL,
   type Dados,
 } from './dados'
-import { imprimirPedido } from './impressao'
-import type { Canal, Categoria, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
+import { imprimirLancamento, imprimirPedido } from './impressao'
+import { DetalheComanda } from './Comandas'
+import { statusComanda } from './comanda'
+import type { Canal, Categoria, Comanda, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
 import { CampoNumero, Imagem, Modal, btn } from './ui'
 import { LerComCamera, cameraLeSuportada, useLeitorCodigo } from './leitor'
 
@@ -66,6 +68,9 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   useLeitorCodigo(true, (c) => lerCodigoRef.current(c))
   const lerCodigoRef = useRef<(c: string) => void>(() => {})
   const [pagando, setPagando] = useState(false)
+  /** Venda dividida: o pedido vira uma comanda "Balcão" e usa a tela de pagar por itens / dividir. */
+  const [divididaId, setDivididaId] = useState<string | null>(null)
+  const [lancandoMais, setLancandoMais] = useState(false)
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [montandoCombo, setMontandoCombo] = useState<Produto | null>(null)
@@ -254,6 +259,27 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     limpar()
   }
 
+  /** Dividir a conta / pagar itens separados: mesma tela das comandas. */
+  function dividir() {
+    if (!linhas.length) return
+    const itens = montarItens()
+    const agora = new Date().toISOString()
+    const c: Comanda = {
+      id: novoId(),
+      numero: dados.comandas.reduce((m, x) => Math.max(m, x.numero), 0) + 1,
+      mesa: 'Balcão',
+      nome: cliente.trim(),
+      abertaEm: agora,
+      itens: itens.map((i) => ({ ...i, id: novoId(), lancadoEm: agora })),
+    }
+    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(itens, produtos, insumos), -1))
+    setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
+    dados.setComandas((cs) => [...cs, c])
+    if (config.imprimirAoFinalizar && config.viaChurrasqueira) imprimirLancamento(c, c.itens, config, true)
+    limpar()
+    setDivididaId(c.id)
+  }
+
   function finalizar(desconto: number, pagamentos: Pagamento[], recebidoDinheiro: number) {
     if (!caixaAberto) return
     const itens = montarItens()
@@ -292,6 +318,35 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     setUltimo(pedido)
     setPagando(false)
     limpar()
+  }
+
+  const dividida = divididaId ? dados.comandas.find((c) => c.id === divididaId) : undefined
+  if (dividida && !comanda) {
+    if (lancandoMais) {
+      return (
+        <Venda
+          dados={dados}
+          irPara={irPara}
+          comanda={{
+            titulo: `Balcão${dividida.nome ? ` · ${dividida.nome}` : ''}`,
+            aoVoltar: () => setLancandoMais(false),
+            aoLancar: (itens) => {
+              dados.setComandas((cs) => cs.map((c) => (c.id === dividida.id ? { ...c, itens: [...c.itens, ...itens] } : c)))
+              if (config.imprimirAoFinalizar && config.viaChurrasqueira) imprimirLancamento(dividida, itens, config, false)
+              setLancandoMais(false)
+            },
+          }}
+        />
+      )
+    }
+    return (
+      <div className="mx-auto max-w-4xl">
+        <DetalheComanda dados={dados} comanda={dividida} aoVoltar={() => setDivididaId(null)} aoLancar={() => setLancandoMais(true)}
+          irPara={irPara}
+          rotuloVoltar={statusComanda(dividida, dados.pedidos) === 'aberta' ? '← Voltar para a venda (a conta fica em Comandas)' : '← Nova venda'}
+        />
+      </div>
+    )
   }
 
   if (!caixaAberto && !comanda) {
@@ -571,9 +626,21 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
             </button>
           </>
         ) : (
-          <button className={`${btn.verde} mt-3 w-full py-4 text-xl`} disabled={!linhas.length} onClick={() => setPagando(true)}>
-            Finalizar pedido
-          </button>
+          <>
+            <button className={`${btn.verde} mt-3 w-full py-4 text-xl`} disabled={!linhas.length} onClick={() => setPagando(true)}>
+              Finalizar pedido
+            </button>
+            {!app && (
+              <button
+                className={`${btn.secundario} mt-2 w-full`}
+                disabled={!linhas.length}
+                onClick={dividir}
+                title="Pagar itens separados ou dividir a conta entre pessoas"
+              >
+                👥 Dividir conta / pagar itens separados
+              </button>
+            )}
+          </>
         )}
       </aside>
 

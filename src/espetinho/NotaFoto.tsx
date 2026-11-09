@@ -2,27 +2,43 @@ import { useRef, useState } from 'react'
 import type { LinhaCompra } from './Compras'
 import { arred, brl, limparCodigo, novoId } from './dados'
 import { casarItem, lerChaveIA, lerNotaPorFoto, nomeDoItem, prepararArquivo, salvarChaveIA, ErroLeitura, type Anexo, type ItemLido, type NotaLida } from './notaIA'
-import type { Produto } from './tipos'
+import type { Insumo, Produto } from './tipos'
 import { CampoNumero, CampoTexto, Modal, btn } from './ui'
 
 export interface ResultadoNota {
   linhas: LinhaCompra[]
   novos: Produto[]
-  /** O que aprendeu: código de barras e/ou nome na nota de cada produto. */
-  aprendidos: { produtoId: string; nomeNota: string; codigo?: string }[]
+  novosInsumos: Insumo[]
+  /** O que aprendeu: código de barras e/ou nome na nota de cada produto (ou insumo). */
+  aprendidos: { produtoId: string; insumo?: boolean; nomeNota: string; codigo?: string }[]
   fornecedor: string
   nota: string
 }
 
 interface LinhaRevisao {
   item: ItemLido
-  /** id do produto, 'novo' para cadastrar, '' para ignorar */
+  /** id do produto, 'ins:<id>' para insumo, 'novo' / 'novo-ins' para cadastrar, '' para ignorar */
   produtoId: string
   certeza: string
   quantidade: number
   porEmb: number
+  /** Insumo: quanto de kg/L vem em cada unidade (ex.: garrafa 1 L → 1; saco 5 kg → 5). */
+  fator: number
   total: number
 }
+
+/** Tamanho escrito na nota convertido para a unidade do insumo ("965ML" → 0,965 L; "500G" → 0,5 kg). */
+function fatorPara(descricao: string, unidade: string | undefined) {
+  if (unidade !== 'kg' && unidade !== 'L') return 1
+  const m = descricao.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*(ml|lt|l|kg|g)\b/)
+  if (!m) return 1
+  const n = Number(m[1].replace(',', '.'))
+  const u = m[2]
+  if (unidade === 'L' && (u === 'ml' || u === 'l' || u === 'lt')) return u === 'ml' ? n / 1000 : n
+  if (unidade === 'kg' && (u === 'kg' || u === 'g')) return u === 'g' ? n / 1000 : n
+  return 1
+}
+const arred3 = (v: number) => Math.round(v * 1000) / 1000
 
 const emoji = (nome: string) =>
   /cerv|chopp|skol|brahma|heine|amstel|antarc|itaip|budw|stella|corona|spaten|original/i.test(nome)
@@ -37,7 +53,19 @@ const emoji = (nome: string) =>
             ? '🍾'
             : '🥤'
 
-export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[]; aoFechar: () => void; aoUsar: (r: ResultadoNota) => void }) {
+const ehPeso = (i: ItemLido) => /\b\d+[.,]?\d*\s*(kg|g)\b|\bkg\b/i.test(i.descricao) || (i.quantidade % 1 !== 0 && i.embalagem !== 'caixa')
+
+export function LerNotaFoto({
+  revenda,
+  insumos,
+  aoFechar,
+  aoUsar,
+}: {
+  revenda: Produto[]
+  insumos: Insumo[]
+  aoFechar: () => void
+  aoUsar: (r: ResultadoNota) => void
+}) {
   const [chave, setChave] = useState(lerChaveIA())
   const [chaveNova, setChaveNova] = useState('')
   const [anexos, setAnexos] = useState<Anexo[]>([])
@@ -49,8 +77,14 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
   const [nota, setNota] = useState('')
   const camera = useRef<HTMLInputElement>(null)
   const arquivos = useRef<HTMLInputElement>(null)
-  const ordenados = [...revenda].sort((a, b) => a.nome.localeCompare(b.nome))
+  const porNome = <T extends { nome: string }>(a: T, b: T) => a.nome.localeCompare(b.nome)
+  const espetos = revenda.filter((p) => p.categoria === 'espeto').sort(porNome)
+  const bebidas = revenda.filter((p) => p.categoria !== 'espeto').sort(porNome)
+  const insumosOrd = [...insumos].sort(porNome)
   const prod = (id: string) => revenda.find((p) => p.id === id)
+  const insDe = (v: string) => (v.startsWith('ins:') ? insumos.find((i) => `ins:${i.id}` === v) : undefined)
+  // produtos e insumos concorrem juntos no casamento automático
+  const candidatos = [...revenda.map((p) => ({ ...p, valor: p.id })), ...insumos.map((i) => ({ ...i, id: `ins:${i.id}`, valor: `ins:${i.id}` }))]
 
   async function adicionar(fs: FileList | null) {
     if (!fs?.length) return
@@ -73,9 +107,19 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
       setNota(r.numeroNota ?? '')
       setLinhas(
         r.itens.map((item) => {
-          const c = casarItem(item, revenda)
-          const porEmb = item.unidadesPorEmbalagem ?? (item.embalagem === 'unidade' ? 1 : (c.produto?.unidadesCaixa ?? 1))
-          return { item, produtoId: c.produto?.id ?? '', certeza: c.certeza, quantidade: item.quantidade, porEmb: Math.max(1, porEmb), total: item.valorTotal }
+          const c = casarItem(item, candidatos)
+          const p = c.produto ? prod(c.produto.id) : undefined
+          const porEmb = item.unidadesPorEmbalagem ?? (item.embalagem === 'unidade' || !p ? 1 : (p.unidadesCaixa ?? 1))
+          const ins = c.produto && !p ? insDe(c.produto.id) : undefined
+          return {
+            item,
+            produtoId: c.produto?.id ?? '',
+            certeza: c.certeza,
+            quantidade: item.quantidade,
+            porEmb: Math.max(1, porEmb),
+            fator: ins ? fatorPara(item.descricao, ins.unidade) : 1,
+            total: item.valorTotal,
+          }
         }),
       )
       setEtapa('revisar')
@@ -93,19 +137,44 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
 
   function usar() {
     const novos: Produto[] = []
+    const novosInsumos: Insumo[] = []
     const aprendidos: ResultadoNota['aprendidos'] = []
     const result: LinhaCompra[] = []
     for (const l of usadas) {
       const codigo = l.item.codigoBarras ? limparCodigo(l.item.codigoBarras) : ''
+      const qtdTotal = arred3(l.quantidade * l.porEmb * (l.produtoId.startsWith('ins:') || l.produtoId === 'novo-ins' ? l.fator : 1))
+      // ---- insumo (carne em kg, embalagem…) ----
+      if (l.produtoId === 'novo-ins' || l.produtoId.startsWith('ins:')) {
+        let i = insDe(l.produtoId)
+        if (!i) {
+          i = {
+            id: novoId(),
+            nome: nomeDoItem(l.item.descricao),
+            unidade: ehPeso(l.item) ? 'kg' : 'un',
+            precoCompra: 0,
+            qtdCompra: 1,
+            estoque: 0,
+            grupo: 'Compras',
+            nomesNota: [l.item.descricao],
+            ...(codigo.length >= 8 ? { codigos: [codigo] } : {}),
+          }
+          novosInsumos.push(i)
+        } else {
+          aprendidos.push({ produtoId: i.id, insumo: true, nomeNota: l.item.descricao, ...(codigo.length >= 8 ? { codigo } : {}) })
+        }
+        result.push({ produtoId: i.id, insumo: true, porCaixa: false, caixas: 0, porCaixaUn: 1, unidades: qtdTotal, total: l.total, precoVenda: 0 })
+        continue
+      }
+      // ---- produto pronto (bebida, espeto pronto, gelo…) ----
       let p = l.produtoId === 'novo' ? undefined : prod(l.produtoId)
       if (!p) {
         const nome = nomeDoItem(l.item.descricao)
         p = {
           id: novoId(),
           nome,
-          categoria: 'bebida',
+          categoria: /espeto/i.test(nome) ? 'espeto' : 'bebida',
           preco: 0,
-          emoji: emoji(nome),
+          emoji: /espeto/i.test(nome) ? '🍢' : emoji(nome),
           ficha: [],
           custoDireto: 0,
           ativo: true,
@@ -124,12 +193,12 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
         porCaixa: caixa,
         caixas: caixa ? l.quantidade : 0,
         porCaixaUn: caixa ? l.porEmb : (p.unidadesCaixa ?? 12),
-        unidades: arred(l.quantidade * l.porEmb),
+        unidades: qtdTotal,
         total: l.total,
         precoVenda: p.preco,
       })
     }
-    aoUsar({ linhas: result, novos, aprendidos, fornecedor: fornecedor.trim(), nota: nota.trim() })
+    aoUsar({ linhas: result, novos, novosInsumos, aprendidos, fornecedor: fornecedor.trim(), nota: nota.trim() })
   }
 
   // ---------- sem chave ----------
@@ -203,7 +272,9 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
                 <tbody>
                   {linhas.map((l, i) => {
                     const p = l.produtoId && l.produtoId !== 'novo' ? prod(l.produtoId) : undefined
-                    const un = l.quantidade * l.porEmb
+                    const ehIns = l.produtoId.startsWith('ins:') || l.produtoId === 'novo-ins'
+                    const un = l.quantidade * l.porEmb * (ehIns ? l.fator : 1)
+                    const unidadeIns = insDe(l.produtoId)?.unidade ?? (l.produtoId === 'novo-ins' ? (ehPeso(l.item) ? 'kg' : 'un') : 'un')
                     return (
                       <tr key={i} className={`border-b border-stone-100 align-top ${l.produtoId ? '' : 'bg-stone-50 text-stone-400'}`}>
                         <td className="p-2">
@@ -228,20 +299,43 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
                             value={l.produtoId}
                             onChange={(e) => {
                               const np = prod(e.target.value)
+                              const ni = insDe(e.target.value)
                               muda(i, {
                                 produtoId: e.target.value,
                                 certeza: 'escolhido',
+                                fator: ni ? fatorPara(l.item.descricao, ni.unidade) : 1,
                                 ...(l.item.unidadesPorEmbalagem == null && l.item.embalagem !== 'unidade' && np?.unidadesCaixa ? { porEmb: np.unidadesCaixa } : {}),
                               })
                             }}
                           >
                             <option value="">— não lançar esta linha —</option>
-                            <option value="novo">+ Cadastrar novo: {nomeDoItem(l.item.descricao)}</option>
-                            {ordenados.map((o) => (
-                              <option key={o.id} value={o.id}>
-                                {o.nome}
-                              </option>
-                            ))}
+                            <option value="novo">+ Novo produto pronto: {nomeDoItem(l.item.descricao)}</option>
+                            <option value="novo-ins">+ Novo insumo ({ehPeso(l.item) ? 'kg' : 'un'}): {nomeDoItem(l.item.descricao)}</option>
+                            {espetos.length > 0 && (
+                              <optgroup label="🍢 Espetos prontos">
+                                {espetos.map((o) => (
+                                  <option key={o.id} value={o.id}>
+                                    {o.nome}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <optgroup label="🍺 Bebidas e outros produtos">
+                              {bebidas.map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.nome}
+                                </option>
+                              ))}
+                            </optgroup>
+                            {insumosOrd.length > 0 && (
+                              <optgroup label="🥩 Insumos (carne, embalagem… vão para o estoque de insumos)">
+                                {insumosOrd.map((o) => (
+                                  <option key={o.id} value={`ins:${o.id}`}>
+                                    {o.nome} ({o.unidade})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
                           </select>
                           <div className="mt-1 text-xs">
                             {l.certeza === 'codigo' && <span className="text-emerald-700">✔ pelo código de barras</span>}
@@ -255,10 +349,20 @@ export function LerNotaFoto({ revenda, aoFechar, aoUsar }: { revenda: Produto[];
                             <CampoNumero className="w-20" valor={l.quantidade} aoMudar={(v) => muda(i, { quantidade: v })} />
                             <span className="text-stone-500">×</span>
                             <CampoNumero className="w-16" valor={l.porEmb} aoMudar={(v) => muda(i, { porEmb: Math.max(1, Math.round(v)) })} />
+                            {ehIns && (unidadeIns === 'kg' || unidadeIns === 'L') && (
+                              <>
+                                <span className="text-stone-500">×</span>
+                                <CampoNumero className="w-20" valor={l.fator} aoMudar={(v) => muda(i, { fator: v > 0 ? v : 1 })} />
+                                <span className="text-xs text-stone-500">{unidadeIns} cada</span>
+                              </>
+                            )}
                           </div>
                           <div className="mt-1 text-xs text-stone-500">
-                            {l.porEmb > 1 ? 'caixas × unidades' : 'unidades'} = <b>{arred(un)} un</b>
-                            {p && un > 0 && ` · ${brl(l.total / un)}/un`}
+                            {l.porEmb > 1 ? 'caixas × unidades' : 'quantidade'} ={' '}
+                            <b>
+                              {arred3(un).toLocaleString('pt-BR')} {unidadeIns}
+                            </b>
+                            {(p || insDe(l.produtoId)) && un > 0 && ` · ${brl(l.total / un)}/${unidadeIns}`}
                           </div>
                         </td>
                         <td className="p-2 text-right">
