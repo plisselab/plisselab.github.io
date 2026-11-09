@@ -523,6 +523,10 @@ function EditorProduto({
                 <input type="checkbox" checked={!p.foraDoDelivery} onChange={(e) => set({ foraDoDelivery: e.target.checked ? undefined : true })} />
                 Vender no iFood / 99Food
               </label>
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={!p.foraDoCardapio} onChange={(e) => set({ foraDoCardapio: e.target.checked ? undefined : true })} />
+                Aparece no cardápio (desmarque quando acabar)
+              </label>
             </div>
           </details>
 

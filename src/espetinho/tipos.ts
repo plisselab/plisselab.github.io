@@ -84,6 +84,8 @@ export interface Produto {
   precoDelivery?: number
   /** Não aparece no cardápio de delivery (ex.: carvão, gelo, se não quiser vender pelo app). */
   foraDoDelivery?: boolean
+  /** Tirado do cardápio por enquanto (ex.: acabou a Skol). Continua na venda. */
+  foraDoCardapio?: boolean
 }
 
 export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito' | 'app'
@@ -216,6 +218,8 @@ export interface Config {
   taxa99: number
   /** Quanto o preço do app fica acima do balcão, em % (para cobrir a comissão). */
   acrescimoDelivery: number
+  /** Cardápio: esconder sozinho o que está sem estoque. */
+  cardapioSemEsgotados?: boolean
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'
@@ -241,6 +245,8 @@ export interface MovEstoque {
   /** Compra: de quem comprou e qual nota (várias linhas da mesma compra têm o mesmo compraId). */
   fornecedor?: string
   compraId?: string
+  /** Compra: número da nota/pedido do fornecedor. */
+  nota?: string
 }
 
 /** Item anotado numa comanda (mesa). Sai do estoque ao ser lançado; entra no caixa quando é pago. */
