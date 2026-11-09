@@ -6,6 +6,7 @@ import { aplicarBackup, montarBackup, novoId, type Dados } from './dados'
 import type { Pasta } from './pasta'
 import { urlValida, type Planilha } from './planilha'
 import { imprimirTeste } from './impressao'
+import { lerChaveIA, salvarChaveIA, testarChave } from './notaIA'
 import type { Config } from './tipos'
 import { CampoNumero, CampoTexto, Modal, btn } from './ui'
 
@@ -170,6 +171,8 @@ export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; p
           <CampoNumero rotulo="Pix" sufixo="%" valor={config.taxaPix} aoMudar={(v) => set({ taxaPix: v })} />
         </div>
       </section>
+
+      <SecaoIA />
 
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">🛵 iFood e 99Food</h2>
@@ -609,6 +612,72 @@ function SecaoCelular({ planilha, config }: { planilha: Planilha; config: Config
           </p>
         </Modal>
       )}
+    </section>
+  )
+}
+
+/** Chave da IA que lê as notas por foto (fica só neste aparelho). */
+function SecaoIA() {
+  const [chave, setChave] = useState(lerChaveIA())
+  const [nova, setNova] = useState('')
+  const [estado, setEstado] = useState('')
+  async function testar(k: string) {
+    setEstado('Testando…')
+    try {
+      await testarChave(k)
+      setEstado('✔ Chave funcionando.')
+    } catch (e) {
+      setEstado(`✗ Não funcionou: ${e instanceof Error ? e.message : 'erro'}`)
+    }
+  }
+  return (
+    <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
+      <h2 className="text-lg font-extrabold">🤖 Ler nota por foto (IA)</h2>
+      <p className="text-sm text-stone-600">
+        Em Compras → Nova compra → 📸, a IA Claude lê a foto da nota e preenche os itens para você conferir. Precisa de uma chave da API da Anthropic (crie em{' '}
+        <a className="font-semibold text-orange-700 underline" href="https://platform.claude.com" target="_blank" rel="noreferrer">
+          platform.claude.com
+        </a>
+        , com alguns dólares de crédito e um limite de gasto). A chave fica só neste aparelho.
+      </p>
+      {chave ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded-lg bg-stone-100 px-3 py-2 font-mono text-sm">
+            {chave.slice(0, 10)}…{chave.slice(-4)}
+          </span>
+          <button className={btn.secundario} onClick={() => testar(chave)}>
+            Testar
+          </button>
+          <button
+            className="px-2 text-sm font-semibold text-red-600"
+            onClick={() => {
+              if (!confirm('Apagar a chave deste aparelho?')) return
+              salvarChaveIA('')
+              setChave('')
+              setEstado('')
+            }}
+          >
+            Apagar chave
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 flex gap-2">
+          <CampoTexto className="flex-1" valor={nova} aoMudar={setNova} placeholder="sk-ant-…" />
+          <button
+            className={btn.primario}
+            disabled={!nova.trim().startsWith('sk-')}
+            onClick={() => {
+              salvarChaveIA(nova)
+              setChave(nova.trim())
+              setNova('')
+              testar(nova.trim())
+            }}
+          >
+            Salvar
+          </button>
+        </div>
+      )}
+      {estado && <p className="mt-2 text-sm font-semibold">{estado}</p>}
     </section>
   )
 }

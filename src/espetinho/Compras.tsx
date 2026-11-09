@@ -15,13 +15,14 @@ import {
   type Dados,
 } from './dados'
 import { LerComCamera, cameraLeSuportada, useLeitorCodigo } from './leitor'
+import { LerNotaFoto, type ResultadoNota } from './NotaFoto'
 import type { MovEstoque, Movimento, Produto } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 
 /** Bebidas/produtos de revenda: sem ficha (não são montados) e sem componentes (não são fardo/combo). */
 export const ehRevenda = (p: Produto) => !p.ficha.length && !p.componentes?.length && p.categoria !== 'espeto'
 
-interface LinhaCompra {
+export interface LinhaCompra {
   produtoId: string
   porCaixa: boolean
   caixas: number
@@ -184,6 +185,7 @@ function NovaCompra({
   const [codigoNovo, setCodigoNovo] = useState<string | null>(null)
   const [camera, setCamera] = useState(false)
   const [conferindo, setConferindo] = useState(false)
+  const [notaFoto, setNotaFoto] = useState(false)
   const campoBusca = useRef<HTMLInputElement>(null)
   const prod = (id: string) => produtos.find((p) => p.id === id)!
 
@@ -205,7 +207,31 @@ function NovaCompra({
     if (p && ehRevenda(p)) incluir(p)
     else setCodigoNovo(limparCodigo(c))
   }
-  useLeitorCodigo(!codigoNovo && !camera && !conferindo, lerCodigo)
+  useLeitorCodigo(!codigoNovo && !camera && !conferindo && !notaFoto, lerCodigo)
+
+  /** Itens que vieram da foto da nota (já conferidos): cadastra os novos, guarda o que aprendeu e junta na compra. */
+  function usarNota(r: ResultadoNota) {
+    dados.setProdutos((ps) => [
+      ...ps.map((p) => {
+        const ap = r.aprendidos.filter((a) => a.produtoId === p.id)
+        if (!ap.length) return p
+        const nomes = [...new Set([...(p.nomesNota ?? []), ...ap.map((a) => a.nomeNota)])].slice(-10)
+        const cods = [...new Set([...(p.codigos ?? []), ...ap.flatMap((a) => (a.codigo ? [a.codigo] : []))])]
+        return { ...p, nomesNota: nomes, ...(cods.length ? { codigos: cods } : {}) }
+      }),
+      ...r.novos,
+    ])
+    setRascunho((rs) => {
+      const ls = [...rs.linhas]
+      for (const n of r.linhas) {
+        const i = ls.findIndex((l) => l.produtoId === n.produtoId)
+        if (i < 0) ls.push(n)
+        else ls[i] = { ...ls[i], porCaixa: false, unidades: unidadesDa(ls[i]) + unidadesDa(n), total: arred(ls[i].total + n.total) }
+      }
+      return { ...rs, fornecedor: rs.fornecedor.trim() || r.fornecedor, nota: rs.nota.trim() || r.nota, linhas: ls }
+    })
+    setNotaFoto(false)
+  }
 
   const muda = (i: number, m: Partial<LinhaCompra>) => setLinhas((ls) => ls.map((l, j) => (j === i ? { ...l, ...m } : l)))
   const total = arred(linhas.reduce((s, l) => s + l.total, 0))
@@ -374,6 +400,9 @@ function NovaCompra({
               📷
             </button>
           )}
+          <button className="shrink-0 rounded-xl bg-violet-600 px-4 font-bold text-white hover:bg-violet-700" onClick={() => setNotaFoto(true)}>
+            📸 <span className="hidden sm:inline">Ler nota por foto</span>
+          </button>
           {resultados.length > 0 && (
             <ul className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-xl border-2 border-stone-200 bg-white shadow-xl">
               {resultados.map((p, k) => (
@@ -437,7 +466,7 @@ function NovaCompra({
               {linhas.length === 0 && (
                 <tr>
                   <td colSpan={8} className="p-8 text-center text-stone-400">
-                    Bipe ou busque as bebidas da nota — cada uma vira uma linha aqui.
+                    Bipe ou busque as bebidas da nota — ou toque em 📸 Ler nota por foto — cada uma vira uma linha aqui.
                   </td>
                 </tr>
               )}
@@ -624,6 +653,7 @@ function NovaCompra({
         </Modal>
       )}
 
+      {notaFoto && <LerNotaFoto revenda={revenda} aoFechar={() => setNotaFoto(false)} aoUsar={usarNota} />}
       {camera && (
         <LerComCamera
           aoFechar={() => setCamera(false)}
