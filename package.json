@@ -11,10 +11,12 @@
     "build:pdv": "vite build -c vite.pdv.config.ts && mkdir -p pdv && cp dist-pdv/pdv.html pdv/pdv-espetinho.html"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.7.0",
     "firebase": "^11.10.0",
     "qrcode-generator": "^1.4.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",

@@ -74,6 +74,8 @@ export interface Produto {
   codigos?: string[]
   /** Quantas unidades vêm na caixa/fardo do fornecedor (para sugerir a compra em caixas). */
   unidadesCaixa?: number
+  /** Como o produto aparece escrito nas notas dos fornecedores (aprendido na leitura por foto). */
+  nomesNota?: string[]
   /** Cardápio: descrição curta (ex.: "Cerveja puro malte, lata gelada"). */
   descricao?: string
   /** Cardápio: seção onde aparece (vazio = automático: Cervejas, Destilados, Espetos…). */
