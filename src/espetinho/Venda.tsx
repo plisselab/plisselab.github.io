@@ -90,7 +90,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
 
   // dia sem espeto (só adega): espetos e combos/jantinhas somem da venda
   const ativos = produtos.filter((p) => p.ativo && (config.espetoHoje || (p.categoria !== 'espeto' && p.categoria !== 'combo')))
-  const visiveis = busca.trim() ? buscarProdutos(ativos, busca) : filtro === 'todos' ? ativos : ativos.filter((p) => p.categoria === filtro)
+  const filtrados = busca.trim() ? buscarProdutos(ativos, busca) : filtro === 'todos' ? ativos : ativos.filter((p) => p.categoria === filtro)
   const categorias = CATEGORIAS.filter((c) => ativos.some((p) => p.categoria === c))
 
   const consumoCarrinho = useMemo(() => consumoDosItens(linhas), [linhas])
@@ -140,6 +140,17 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     const valores = [restante(p.id), limiteInsumos(p)].filter((v): v is number => v !== undefined)
     return valores.length ? Math.min(...valores) : undefined
   }
+
+  // disponíveis primeiro em ordem alfabética, esgotados no fim (na busca mantém a relevância).
+  // O que já está no carrinho conta como disponível, para o botão não pular de lugar ao vender o último.
+  const indisponivel = (p: Produto) => {
+    const r = restanteBotao(p)
+    return r !== undefined && r <= 0 && noCarrinhoDireto(p.id) === 0
+  }
+  const visiveis = (busca.trim() ? filtrados : [...filtrados].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base', numeric: true })))
+    .map((p) => ({ p, fora: indisponivel(p) }))
+    .sort((a, b) => Number(a.fora) - Number(b.fora))
+    .map((x) => x.p)
 
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
   const precoLinha = (l: Linha) => {
