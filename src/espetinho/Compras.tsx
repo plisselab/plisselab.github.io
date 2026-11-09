@@ -24,7 +24,8 @@ import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 /** Bebidas/produtos de revenda: sem ficha (não são montados) e sem componentes (não são fardo/combo). */
 export const ehRevenda = (p: Produto) => !p.ficha.length && !p.componentes?.length && p.categoria !== 'espeto'
 /** O que pode entrar numa compra pronto: bebidas, espetos (comprados prontos), gelo, carvão… (não combos/fardos nem doses). */
-export const compravel = (p: Produto) => !p.componentes?.length && p.categoria !== 'drink' && p.categoria !== 'combo'
+export const compravel = (p: Produto) =>
+  !p.componentes?.length && p.categoria !== 'drink' && p.categoria !== 'combo' && !(p.categoria === 'bebida' && p.ficha.length > 0)
 
 export interface LinhaCompra {
   /** Id do produto — ou do insumo, quando `insumo` é true. */
@@ -194,6 +195,8 @@ function NovaCompra({
   const [camera, setCamera] = useState(false)
   const [conferindo, setConferindo] = useState(false)
   const [notaFoto, setNotaFoto] = useState(false)
+  /** Linha de garrafa que o dono quer vender em doses. */
+  const [emDoses, setEmDoses] = useState<LinhaCompra | null>(null)
   const campoBusca = useRef<HTMLInputElement>(null)
   const prod = (id: string) => produtos.find((p) => p.id === id)!
   const ins = (id: string) => insumos.find((i) => i.id === id)!
@@ -224,8 +227,8 @@ function NovaCompra({
   function lerCodigo(c: string) {
     const p = acharPorCodigo(produtos, c)
     const i = insumos.find((x) => x.codigos?.some((k) => limparCodigo(k) === limparCodigo(c)))
-    if (p && compravel(p)) incluir(p)
-    else if (i) incluirInsumo(i)
+    if (i) incluirInsumo(i)
+    else if (p && compravel(p)) incluir(p)
     else setCodigoNovo(limparCodigo(c))
   }
   useLeitorCodigo(!codigoNovo && !camera && !conferindo && !notaFoto, lerCodigo)
@@ -309,8 +312,8 @@ function NovaCompra({
           ...p,
           estoque: (p.estoque ?? 0) + un,
           custoDireto: arred(custo),
-          // comprado pronto: a ficha de insumos não vale mais (fica guardada)
-          ...(p.ficha.length ? { ficha: [], fichaAnterior: p.ficha } : {}),
+          // espeto comprado pronto: a ficha de insumos não vale mais (fica guardada)
+          ...(p.ficha.length && p.categoria === 'espeto' ? { ficha: [], fichaAnterior: p.ficha } : {}),
           preco: l.precoVenda > 0 ? l.precoVenda : p.preco,
           ...(l.porCaixa ? { unidadesCaixa: l.porCaixaUn } : {}),
         }
@@ -431,6 +434,12 @@ function NovaCompra({
             onKeyDown={(e) => {
               if (e.key !== 'Enter' || !busca.trim()) return
               e.preventDefault()
+              if (/^\d{6,}$/.test(busca.trim())) {
+                // código de barras digitado/bipado no campo
+                lerCodigo(busca.trim())
+                setBusca('')
+                return
+              }
               const p = acharPorCodigo(produtos, busca)
               if (p && compravel(p)) incluir(p)
               else if (resultados.length >= 1 && !/^\d{6,}$/.test(busca.trim())) incluir(resultados[0])
@@ -598,6 +607,11 @@ function NovaCompra({
                           </div>
                           {p.ficha.length > 0 && (
                             <div className="mt-0.5 text-xs font-semibold text-amber-700">comprado pronto: o custo passa a ser o desta compra</div>
+                          )}
+                          {p.categoria === 'bebida' && (
+                            <button className="mt-1 text-xs font-bold text-violet-700 underline" onClick={() => setEmDoses(l)}>
+                              🥃 Vou vender em doses
+                            </button>
                           )}
                         </div>
                       </div>
@@ -775,6 +789,23 @@ function NovaCompra({
         </Modal>
       )}
 
+      {emDoses && (
+        <ModalVenderEmDoses
+          dados={dados}
+          produto={prod(emDoses.produtoId)}
+          garrafas={unidadesDa(emDoses)}
+          totalPago={emDoses.total}
+          aoFechar={() => setEmDoses(null)}
+          aoConfirmar={(insumoId, litros) => {
+            // a linha da garrafa vira linha do insumo, em litros (mesmo valor pago)
+            setLinhas((ls) => [
+              ...ls.filter((x) => !(x.produtoId === emDoses.produtoId && !x.insumo)),
+              { produtoId: insumoId, insumo: true, porCaixa: false, caixas: 0, porCaixaUn: 1, unidades: litros, total: emDoses.total, precoVenda: 0 },
+            ])
+            setEmDoses(null)
+          }}
+        />
+      )}
       {notaFoto && <LerNotaFoto revenda={revenda} insumos={insumos} aoFechar={() => setNotaFoto(false)} aoUsar={usarNota} />}
       {camera && (
         <LerComCamera
@@ -880,6 +911,136 @@ function ModalProdutoNovo({
           ))}
         </ul>
       </div>
+    </Modal>
+  )
+}
+
+/** Tamanho da garrafa escrito no nome ("Montilla 1L" → 1000 ml; "51 965 ml" → 965). */
+function mlDoNome(nome: string) {
+  const m = nome.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*(ml|l|lt|litros?)\b/)
+  if (!m) return 1000
+  const n = Number(m[1].replace(',', '.'))
+  return m[2] === 'ml' ? n : Math.round(n * 1000)
+}
+
+/**
+ * Garrafa comprada para vender em doses: cria a bebida como insumo em litros e o produto "Dose de …",
+ * e a compra passa a lançar litros no estoque da bebida.
+ */
+function ModalVenderEmDoses({
+  dados,
+  produto,
+  garrafas,
+  totalPago,
+  aoFechar,
+  aoConfirmar,
+}: {
+  dados: Dados
+  produto: Produto
+  garrafas: number
+  totalPago: number
+  aoFechar: () => void
+  aoConfirmar: (insumoId: string, litros: number) => void
+}) {
+  const nomeBase = produto.nome.replace(/\s*\d+(?:[.,]\d+)?\s*(ml|l|lt|litros?)\b/i, '').trim() || produto.nome
+  const [nome, setNome] = useState(nomeBase)
+  const [mlGarrafa, setMlGarrafa] = useState(mlDoNome(produto.nome))
+  const [mlDose, setMlDose] = useState(100)
+  const [precoDose, setPrecoDose] = useState(0)
+  const [manterGarrafa, setManterGarrafa] = useState(false)
+  const litros = Math.round(((garrafas * mlGarrafa) / 1000) * 1000) / 1000
+  const custoGarrafa = garrafas > 0 && totalPago > 0 ? totalPago / garrafas : produto.custoDireto
+  const custoDose = mlGarrafa > 0 ? (custoGarrafa * mlDose) / mlGarrafa : 0
+  const dosesPorGarrafa = mlDose > 0 ? Math.floor(mlGarrafa / mlDose) : 0
+  const lucro = precoDose - custoDose
+
+  function confirmar() {
+    const insumoId = novoId()
+    dados.setInsumos((is) => [
+      ...is,
+      {
+        id: insumoId,
+        nome: nome.trim(),
+        unidade: 'L',
+        precoCompra: Math.round(custoGarrafa * 100) / 100,
+        qtdCompra: mlGarrafa / 1000,
+        estoque: 0,
+        grupo: 'Bebidas',
+        // o código de barras da garrafa lança a bebida (em litros) nas compras
+        ...(produto.codigos?.length ? { codigos: produto.codigos } : {}),
+      },
+    ])
+    dados.setProdutos((ps) => [
+      ...ps.map((p) =>
+        p.id !== produto.id
+          ? p
+          : manterGarrafa
+            ? // garrafa fechada vendida sai do mesmo estoque em litros
+              { ...p, ficha: [{ insumoId, qtd: mlGarrafa }], custoDireto: 0, estoque: undefined }
+            : { ...p, ativo: false, codigos: undefined },
+      ),
+      {
+        id: novoId(),
+        nome: `Dose de ${nome.trim()} ${mlDose} ml`,
+        categoria: 'drink',
+        preco: precoDose,
+        emoji: '🥃',
+        ficha: [{ insumoId, qtd: mlDose }],
+        custoDireto: 0,
+        ativo: true,
+        tamanho: `${mlDose} ml`,
+        descricao: nome.trim(),
+      },
+    ])
+    aoConfirmar(insumoId, litros)
+  }
+
+  return (
+    <Modal titulo="🥃 Vender em doses" aberto aoFechar={aoFechar}>
+      <p className="text-sm text-stone-600">
+        A garrafa vira <b>bebida em litros</b> no estoque, e é criado o produto <b>“Dose”</b>: cada dose vendida tira os ml da garrafa aberta.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <CampoTexto className="col-span-2" rotulo="Nome da bebida" valor={nome} aoMudar={setNome} />
+        <CampoNumero rotulo="Cada garrafa tem" sufixo="ml" valor={mlGarrafa} aoMudar={(v) => setMlGarrafa(Math.max(1, Math.round(v)))} />
+        <div>
+          <span className="mb-1 block text-sm font-semibold text-stone-600">Tamanho da dose</span>
+          <div className="flex gap-1">
+            {[50, 100].map((m) => (
+              <button key={m} onClick={() => setMlDose(m)} className={`rounded-full px-3 py-2 font-bold ${mlDose === m ? 'bg-violet-600 text-white' : 'bg-stone-100'}`}>
+                {m} ml
+              </button>
+            ))}
+            <CampoNumero className="w-24" sufixo="ml" valor={mlDose} aoMudar={(v) => setMlDose(Math.max(1, Math.round(v)))} />
+          </div>
+        </div>
+        <CampoNumero className="col-span-2" rotulo="Preço da dose" prefixo="R$" grande valor={precoDose} aoMudar={setPrecoDose} />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center text-sm">
+        <div className="rounded-xl bg-stone-100 p-2">
+          <div className="text-xs text-stone-600">Doses por garrafa</div>
+          <div className="text-lg font-extrabold">{dosesPorGarrafa}</div>
+        </div>
+        <div className="rounded-xl bg-stone-100 p-2">
+          <div className="text-xs text-stone-600">Custo da dose</div>
+          <div className="text-lg font-extrabold">{brl(custoDose)}</div>
+        </div>
+        <div className={`rounded-xl p-2 ${precoDose > 0 && lucro < 0 ? 'bg-red-100' : 'bg-emerald-100'}`}>
+          <div className="text-xs text-stone-600">Lucro por dose</div>
+          <div className="text-lg font-extrabold">{precoDose > 0 ? brl(lucro) : '—'}</div>
+        </div>
+      </div>
+      {custoGarrafa <= 0 && <p className="mt-2 text-xs text-amber-700">Preencha o valor pago na compra para ver o custo da dose.</p>}
+      <p className="mt-3 text-sm">
+        Nesta compra: {garrafas} garrafa{garrafas === 1 ? '' : 's'} × {mlGarrafa} ml = <b>{litros.toLocaleString('pt-BR')} L</b> no estoque.
+      </p>
+      <label className="mt-2 flex items-center gap-2 text-sm font-semibold">
+        <input type="checkbox" className="h-4 w-4" checked={manterGarrafa} onChange={(e) => setManterGarrafa(e.target.checked)} />
+        Também vendo a garrafa fechada (mantém “{produto.nome}” na venda)
+      </label>
+      <button className={`${btn.primario} mt-4 w-full`} disabled={!nome.trim() || mlGarrafa <= 0 || mlDose <= 0} onClick={confirmar}>
+        Criar dose e lançar em litros
+      </button>
     </Modal>
   )
 }

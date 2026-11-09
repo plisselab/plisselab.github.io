@@ -39,6 +39,7 @@ Código em `src/espetinho/`. Tudo fica salvo no navegador do aparelho (use **Con
 
 **Lucro** = faturamento − custo dos insumos dos itens vendidos − taxas da maquininha − despesas do dia.
 
+- **🥃 Garrafa vendida em doses**: na compra, “Vou vender em doses” na linha da garrafa transforma a bebida em insumo em litros (garrafas × ml) e cria o produto “Dose de … 100 ml” (ou 50 ml) com custo e lucro por dose; opcionalmente mantém a garrafa fechada à venda, tirando os ml do mesmo estoque.
 - **🥖 Espeto no pão** (Cadastros): cria o combo com 1 espeto à escolha + pão francês + vinagrete (insumo “Pão francês” criado se não existir). Preço base = espeto mais barato + R$ 4, e os espetos mais caros pagam a diferença (+R$). Nos combos dá para ajustar o “+R$ a mais por opção”.
 - **👥 Dividir na venda**: na tela Vender, “Dividir conta / pagar itens separados” transforma o pedido numa comanda “Balcão” e abre a mesma tela das comandas — pagar tudo, pagar só alguns itens ou dividir igualmente entre pessoas, com os cupons de cada pagamento e da conta completa.
 - **🧹 Zerar movimento** (Configurações): depois dos testes, apaga vendas, caixas, comandas, compras/histórico de estoque e zera as quantidades em estoque, mantendo produtos, insumos, preços e configurações. Pede para escrever ZERAR e baixa um backup antes.
