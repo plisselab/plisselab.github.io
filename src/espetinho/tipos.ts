@@ -245,6 +245,8 @@ export interface MovEstoque {
   /** Compra: de quem comprou e qual nota (várias linhas da mesma compra têm o mesmo compraId). */
   fornecedor?: string
   compraId?: string
+  /** Compra: número da nota/pedido do fornecedor. */
+  nota?: string
 }
 
 /** Item anotado numa comanda (mesa). Sai do estoque ao ser lançado; entra no caixa quando é pago. */
