@@ -1,11 +1,13 @@
-import { useRef, useState } from 'react'
+import qrcode from 'qrcode-generator'
+import { useRef, useState, useSyncExternalStore } from 'react'
+import { assinarInstalar, instalarApp, linkConectar, podeInstalar, rodandoComoApp } from './conectar'
 import { codigoAppsScript } from './appsScript'
 import { aplicarBackup, montarBackup, novoId, type Dados } from './dados'
 import type { Pasta } from './pasta'
 import { urlValida, type Planilha } from './planilha'
 import { imprimirTeste } from './impressao'
 import type { Config } from './tipos'
-import { CampoNumero, CampoTexto, btn } from './ui'
+import { CampoNumero, CampoTexto, Modal, btn } from './ui'
 
 export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; planilha: Planilha; pasta: Pasta }) {
   const { config, setConfig } = dados
@@ -202,6 +204,8 @@ export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; p
           aoMudar={(v) => set({ alertaEstoque: Math.round(v) })}
         />
       </section>
+
+      <SecaoCelular planilha={planilha} config={config} />
 
       <SecaoPasta dados={dados} pasta={pasta} />
 
@@ -421,7 +425,8 @@ function SecaoPasta({ dados, pasta }: { dados: Dados; pasta: Pasta }) {
       <h2 className="text-lg font-extrabold">📁 Salvar as vendas no Google Drive (recomendado)</h2>
       {!pasta.suportado ? (
         <p className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-          Este navegador não deixa salvar direto numa pasta. Use o <b>Google Chrome</b> ou o <b>Microsoft Edge</b> no computador.
+          Este navegador não deixa salvar direto numa pasta (celulares não permitem). No computador, use o <b>Google Chrome</b> ou o <b>Microsoft Edge</b>. No
+          celular, os dados chegam pela planilha — veja “📱 Usar no celular” acima.
         </p>
       ) : (
         <>
@@ -497,6 +502,96 @@ function SecaoPasta({ dados, pasta }: { dados: Dados; pasta: Pasta }) {
             computador: escolha a mesma pasta do Drive e o sistema pergunta se quer usar os dados de lá.
           </p>
         </>
+      )}
+    </section>
+  )
+}
+
+/** Celular: conectar pela planilha com QR code e instalar como aplicativo. */
+function SecaoCelular({ planilha, config }: { planilha: Planilha; config: Config }) {
+  const [qrAberto, setQrAberto] = useState(false)
+  const instalavel = useSyncExternalStore(assinarInstalar, podeInstalar, () => false)
+  const app = rodandoComoApp()
+  const link = planilha.ligado ? linkConectar(config.planilhaUrl.trim(), config.planilhaChave) : ''
+  const svg = (() => {
+    if (!link) return ''
+    const qr = qrcode(0, 'M')
+    qr.addData(link)
+    qr.make()
+    return qr.createSvgTag({ cellSize: 5, margin: 2, scalable: true })
+  })()
+
+  return (
+    <section className="rounded-2xl border-2 border-sky-300 bg-white p-4">
+      <h2 className="text-lg font-extrabold">📱 Usar no celular</h2>
+      <p className="text-sm text-stone-600">
+        O celular recebe os mesmos dados do caixa (vendas, comandas, estoque) e se atualiza sozinho — pela planilha do Google. Dá para acompanhar o
+        movimento de casa ou usar o celular para anotar comandas.
+      </p>
+
+      {planilha.ligado ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className={btn.primario} onClick={() => setQrAberto(true)}>
+            📱 Conectar celular (QR code)
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+          Primeiro ligue a planilha neste computador (em <b>Avançado: Google Planilhas</b>, mais abaixo). Depois volte aqui para gerar o QR code do celular.
+        </p>
+      )}
+
+      <div className="mt-4 rounded-xl bg-stone-50 p-3 text-sm">
+        <div className="font-bold">Instalar como aplicativo</div>
+        {app ? (
+          <p className="text-emerald-700">✔ Já está aberto como aplicativo.</p>
+        ) : instalavel ? (
+          <button className={`${btn.verde} mt-2 !py-2`} onClick={() => void instalarApp()}>
+            📲 Instalar o PDV neste aparelho
+          </button>
+        ) : (
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-stone-700">
+            <li>
+              <b>Android (Chrome):</b> menu ⋮ → <b>Instalar app</b> (ou “Adicionar à tela inicial”).
+            </li>
+            <li>
+              <b>iPhone (Safari):</b> botão Compartilhar ⬆️ → <b>Adicionar à Tela de Início</b>.
+            </li>
+            <li>Vira um ícone 🔥 PDV que abre em tela cheia, sem a barra do navegador.</li>
+          </ul>
+        )}
+      </div>
+
+      {qrAberto && (
+        <Modal titulo="📱 Conectar celular" aberto aoFechar={() => setQrAberto(false)}>
+          <ol className="list-decimal space-y-1 pl-5 text-sm">
+            <li>No celular, abra a <b>câmera</b> e aponte para o código.</li>
+            <li>Toque no link que aparecer e confirme “Conectar”.</li>
+            <li>Pronto: os dados chegam em alguns segundos e passam a se atualizar sozinhos.</li>
+          </ol>
+          <div className="mx-auto mt-3 w-64 rounded-xl border-2 border-stone-200 bg-white p-2" dangerouslySetInnerHTML={{ __html: svg }} />
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <button
+              className={btn.secundario}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(link)
+                  alert('Link copiado.')
+                } catch {
+                  prompt('Copie o link:', link)
+                }
+              }}
+            >
+              🔗 Copiar link
+            </button>
+            <a className={btn.secundario} href={`https://wa.me/?text=${encodeURIComponent(`Abrir o PDV conectado: ${link}`)}`} target="_blank" rel="noreferrer">
+              💬 Mandar no WhatsApp
+            </a>
+          </div>
+          <p className="mt-3 rounded-lg bg-red-50 p-2 text-xs text-red-800">
+            ⚠ Quem tiver este código ou link consegue ver e alterar as vendas. Mande só para você ou para quem trabalha no caixa.
+          </p>
+        </Modal>
       )}
     </section>
   )

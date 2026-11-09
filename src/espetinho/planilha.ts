@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { NOMES_CATEGORIA, NOMES_FORMA, aplicarBackup, custoUnitarioInsumo, montarBackup, novoId, resumirCaixa, type Dados } from './dados'
+import { aparelho, aparelhoVazio, silenciado, silenciarMudanca } from './sincronia'
+import { NOMES_CATEGORIA, NOMES_FORMA, aplicarBackup, custoUnitarioInsumo, montarBackup, resumirCaixa, type Dados } from './dados'
 
 /**
  * Sincronização com uma planilha do Google, via Apps Script implantado como app da Web.
@@ -15,11 +16,12 @@ interface Tabela {
 }
 
 const CHAVE_META = 'espeto:sync'
-const CHAVE_APARELHO = 'espeto:aparelho'
 
 interface Meta {
   /** Data (ISO) da última versão enviada ou carregada da planilha. */
   versao?: string
+  /** Há mudanças deste aparelho que ainda não foram para a planilha (ex.: internet caiu). */
+  pendente?: boolean
 }
 
 function lerMeta(): Meta {
@@ -34,18 +36,6 @@ function gravarMeta(m: Meta) {
     localStorage.setItem(CHAVE_META, JSON.stringify(m))
   } catch {
     // ignora
-  }
-}
-function aparelho() {
-  try {
-    let id = localStorage.getItem(CHAVE_APARELHO)
-    if (!id) {
-      id = `${navigator.platform || 'aparelho'}-${novoId().slice(0, 6)}`
-      localStorage.setItem(CHAVE_APARELHO, id)
-    }
-    return id
-  } catch {
-    return 'aparelho'
   }
 }
 
@@ -160,17 +150,21 @@ export function usePlanilha(dados: Dados) {
   const url = config.planilhaUrl.trim()
   const ligado = urlValida(url) && !!config.planilhaChave
   const [estado, setEstado] = useState<Estado>({ tipo: 'desligado' })
+  /** Dados mais novos na planilha que NÃO foram carregados sozinhos (este aparelho tem mudanças não enviadas). */
   const [remotoMaisNovo, setRemotoMaisNovo] = useState<Remoto | null>(null)
+  /** Aviso de que os dados foram atualizados sozinhos com os de outro aparelho. */
+  const [atualizadoAuto, setAtualizadoAuto] = useState<string | null>(null)
   /** Endereço da planilha no Google Drive (para abrir e ver as vendas). */
   const [linkPlanilha, setLinkPlanilha] = useState<string | null>(null)
   const dadosRef = useRef(dados)
   dadosRef.current = dados
-  const ignorarProxima = useRef(false)
   /** Só envia depois de conferir a planilha — evita um aparelho vazio apagar os dados de lá. */
   const [verificado, setVerificado] = useState(false)
+  const ocupado = useRef(false)
 
   const enviar = useCallback(async () => {
-    if (!ligado) return
+    if (!ligado || ocupado.current) return
+    ocupado.current = true
     const d = dadosRef.current
     const versao = new Date().toISOString()
     setEstado({ tipo: 'enviando' })
@@ -183,17 +177,73 @@ export function usePlanilha(dados: Dados) {
         tabelas: montarTabelas(d),
         dados: montarBackup(d),
       })
-      gravarMeta({ versao })
+      gravarMeta({ versao, pendente: false })
       setEstado({ tipo: 'ok', em: versao })
     } catch (e) {
       setEstado({ tipo: 'erro', msg: e instanceof Error ? e.message : String(e) })
+    } finally {
+      ocupado.current = false
     }
   }, [ligado, url, config.planilhaChave])
 
   const enviarRef = useRef(enviar)
   enviarRef.current = enviar
 
-  // ao abrir: a planilha tem algo mais novo (salvo de outro aparelho)?
+  /** Substitui os dados deste aparelho pelos da planilha (mantém endereço e chave da planilha). */
+  const carregar = useCallback(async () => {
+    ocupado.current = true
+    try {
+      const r = await chamar(url, { acao: 'carregar', chave: config.planilhaChave })
+      const b = r.dados
+      if (!b || !Array.isArray(b.produtos)) throw new Error('A planilha ainda não tem dados salvos.')
+      silenciarMudanca()
+      aplicarBackup(dadosRef.current, b)
+      gravarMeta({ versao: r.atualizadoEm, pendente: false })
+      setRemotoMaisNovo(null)
+      setEstado({ tipo: 'ok', em: r.atualizadoEm })
+      return r.atualizadoEm as string
+    } finally {
+      ocupado.current = false
+    }
+  }, [url, config.planilhaChave])
+  const carregarRef = useRef(carregar)
+  carregarRef.current = carregar
+
+  /**
+   * Confere a planilha. Se outro aparelho salvou algo mais novo:
+   * - sem mudanças locais pendentes → carrega sozinho;
+   * - com mudanças locais não enviadas → pergunta (para nenhuma venda se perder).
+   */
+  const conferir = useCallback(async () => {
+    if (!ligado || ocupado.current) return
+    const r: { atualizadoEm: string | null; aparelho: string | null; planilhaUrl?: string } = await chamar(url, {
+      acao: 'info',
+      chave: config.planilhaChave,
+    })
+    if (r.planilhaUrl) setLinkPlanilha(r.planilhaUrl)
+    setVerificado(true)
+    const meta = lerMeta()
+    const novo = !!r.atualizadoEm && (!meta.versao || r.atualizadoEm > meta.versao) && r.aparelho !== aparelho()
+    if (novo) {
+      // aparelho nunca sincronizado mas com vendas: pergunta antes de trocar
+      const podeSozinho = !meta.pendente && (!!meta.versao || aparelhoVazio(dadosRef.current))
+      if (podeSozinho) {
+        try {
+          setAtualizadoAuto(await carregarRef.current())
+        } catch {
+          setRemotoMaisNovo({ atualizadoEm: r.atualizadoEm!, aparelho: r.aparelho })
+        }
+      } else setRemotoMaisNovo({ atualizadoEm: r.atualizadoEm!, aparelho: r.aparelho })
+      return
+    }
+    setEstado((e) => (e.tipo === 'pendente' || e.tipo === 'enviando' ? e : { tipo: 'ok', em: r.atualizadoEm ?? '' }))
+    // planilha vazia: manda o que este aparelho tem
+    if (!r.atualizadoEm && config.planilhaAuto) void enviarRef.current()
+  }, [ligado, url, config.planilhaChave, config.planilhaAuto])
+  const conferirRef = useRef(conferir)
+  conferirRef.current = conferir
+
+  // ao abrir (e ao trocar endereço/chave): confere já; se falhar, tenta de novo em 30 s
   useEffect(() => {
     setVerificado(false)
     if (!ligado) {
@@ -202,72 +252,78 @@ export function usePlanilha(dados: Dados) {
     }
     let vivo = true
     let tentativa: ReturnType<typeof setTimeout> | undefined
-    const conferir = () =>
-      chamar(url, { acao: 'info', chave: config.planilhaChave })
-        .then((r: { atualizadoEm: string | null; aparelho: string | null; planilhaUrl?: string }) => {
-          if (!vivo) return
-          if (r.planilhaUrl) setLinkPlanilha(r.planilhaUrl)
-          const local = lerMeta().versao
-          const novo = !!r.atualizadoEm && (!local || r.atualizadoEm > local) && r.aparelho !== aparelho()
-          if (novo) setRemotoMaisNovo({ atualizadoEm: r.atualizadoEm!, aparelho: r.aparelho })
-          setVerificado(true)
-          setEstado({ tipo: 'ok', em: r.atualizadoEm ?? '' })
-          // planilha vazia: manda o que este aparelho tem
-          if (!r.atualizadoEm && config.planilhaAuto) void enviarRef.current()
-        })
-        .catch((e) => {
-          if (!vivo) return
-          setEstado({ tipo: 'erro', msg: e instanceof Error ? e.message : String(e) })
-          tentativa = setTimeout(conferir, 30000)
-        })
-    void conferir()
+    const tentar = () =>
+      conferirRef.current().catch((e) => {
+        if (!vivo) return
+        setEstado({ tipo: 'erro', msg: e instanceof Error ? e.message : String(e) })
+        tentativa = setTimeout(tentar, 30000)
+      })
+    void tentar()
     return () => {
       vivo = false
       clearTimeout(tentativa)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ligado, url, config.planilhaChave])
 
-  // envia alguns segundos depois de cada mudança (e tenta de novo a cada minuto se falhou)
-  const { insumos, produtos, pedidos, caixas, movEstoque } = dados
-  const configTxt = JSON.stringify({ ...config, planilhaUrl: '', planilhaChave: '', planilhaAuto: true })
+  // depois: confere a cada minuto e sempre que a tela volta a ficar visível
   useEffect(() => {
-    if (ignorarProxima.current) {
-      ignorarProxima.current = false
+    if (!ligado || !verificado) return
+    const checar = () => {
+      if (document.visibilityState === 'visible') void conferirRef.current().catch(() => {})
+    }
+    const t = setInterval(checar, 60000)
+    document.addEventListener('visibilitychange', checar)
+    window.addEventListener('focus', checar)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener('visibilitychange', checar)
+      window.removeEventListener('focus', checar)
+    }
+  }, [ligado, verificado])
+
+  // envia alguns segundos depois de cada mudança deste aparelho
+  const { insumos, produtos, pedidos, caixas, movEstoque, comandas } = dados
+  const configTxt = JSON.stringify({ ...config, planilhaUrl: '', planilhaChave: '', planilhaAuto: true })
+  const primeira = useRef(true)
+  useEffect(() => {
+    if (primeira.current) {
+      primeira.current = false
       return
     }
-    if (!ligado || !verificado || !config.planilhaAuto || remotoMaisNovo) return
+    // dados que chegaram de fora não são mudança local
+    if (silenciado()) return
+    if (!ligado) return
+    gravarMeta({ ...lerMeta(), pendente: true })
+    if (!verificado || !config.planilhaAuto || remotoMaisNovo) return
     setEstado({ tipo: 'pendente' })
     const t = setTimeout(() => enviarRef.current(), 4000)
     return () => clearTimeout(t)
     // só mudanças nos dados disparam envio (não ligar/configurar a planilha)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insumos, produtos, pedidos, caixas, movEstoque, configTxt])
+  }, [insumos, produtos, pedidos, caixas, movEstoque, comandas, configTxt])
 
   // falhou (sem internet)? tenta de novo a cada minuto
   useEffect(() => {
-    if (estado.tipo !== 'erro' || !verificado || !config.planilhaAuto || remotoMaisNovo) return
+    if (estado.tipo !== 'erro' || !verificado || !config.planilhaAuto || remotoMaisNovo || !lerMeta().pendente) return
     const t = setTimeout(() => enviarRef.current(), 60000)
     return () => clearTimeout(t)
   }, [estado, verificado, config.planilhaAuto, remotoMaisNovo])
-
-  /** Substitui os dados deste aparelho pelos da planilha (mantém endereço e chave da planilha). */
-  const carregar = useCallback(async () => {
-    const r = await chamar(url, { acao: 'carregar', chave: config.planilhaChave })
-    const b = r.dados
-    if (!b || !Array.isArray(b.produtos)) throw new Error('A planilha ainda não tem dados salvos.')
-    ignorarProxima.current = true
-    aplicarBackup(dadosRef.current, b)
-    gravarMeta({ versao: r.atualizadoEm })
-    setRemotoMaisNovo(null)
-    setEstado({ tipo: 'ok', em: r.atualizadoEm })
-  }, [url, config.planilhaChave])
 
   const ignorarRemoto = useCallback(() => {
     setRemotoMaisNovo(null)
     void enviar()
   }, [enviar])
 
-  return { ligado, estado, enviar, carregar, remotoMaisNovo, ignorarRemoto, linkPlanilha }
+  return {
+    ligado,
+    estado,
+    enviar,
+    carregar,
+    remotoMaisNovo,
+    ignorarRemoto,
+    linkPlanilha,
+    atualizadoAuto,
+    fecharAviso: () => setAtualizadoAuto(null),
+  }
 }
 export type Planilha = ReturnType<typeof usePlanilha>
