@@ -8,7 +8,8 @@ import Comandas from './Comandas'
 import { statusComanda } from './comanda'
 import Painel from './Painel'
 import { usePasta } from './pasta'
-import { usePlanilha } from './planilha'
+import { urlValida, usePlanilha } from './planilha'
+import { lerConexaoDaUrl, limparUrl } from './conectar'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
 
@@ -54,6 +55,18 @@ export default function Espetinho() {
     setAba(a)
     setGaveta(false)
   }
+
+  // aberto pelo QR code/link "Conectar celular": liga este aparelho à mesma planilha
+  useEffect(() => {
+    const c = lerConexaoDaUrl()
+    if (!c) return
+    limparUrl()
+    if (!urlValida(c.url)) return
+    if (dados.config.planilhaUrl === c.url && dados.config.planilhaChave === c.chave) return
+    if (!confirm('Conectar este aparelho à planilha de vendas?\n\nEle vai receber os dados do caixa (produtos, vendas, comandas, estoque) e se atualizar sozinho.')) return
+    dados.setConfig((cfg) => ({ ...cfg, planilhaUrl: c.url, planilhaChave: c.chave, planilhaAuto: true }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const titulo = document.title
