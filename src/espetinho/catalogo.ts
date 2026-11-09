@@ -23,7 +23,7 @@ const sem = (t: string) =>
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
 
-const CERVEJA = /cerveja|chopp|lat[aã]o|long neck|litr[aã]o|heineken|brahma|skol|corona|budweiser|amstel|original|stella|spaten|itaipava|antarctica|eisenbahn|devassa|petra|imperio|bohemia|patagonia/
+const CERVEJA = /cerveja|barrigudinha|latinha|chopp|lat[aã]o|long neck|litr[aã]o|heineken|brahma|skol|corona|budweiser|amstel|original|stella|spaten|itaipava|antarctica|eisenbahn|devassa|petra|imperio|bohemia|patagonia/
 const DESTILADO = /cacha[cç]a|vodka|whisky|uisque|gin\b|rum\b|conhaque|tequila|licor|campari|vinho|catuaba|ypioca|dreher|smirnoff|absolut|velho barreiro|\b51\b|corote|ice\b|beats|jack|red label|aperol|martini|jurupinga|sake/
 const ENERGETICO = /energ|red ?bull|monster|tnt|fusion|baly|burn/
 const CONVENIENCIA = /gelo|carv[aã]o|copo|guardanapo|isqueiro|sal grosso/
@@ -394,6 +394,21 @@ export function adicionarCardapioCompleto(dados: Dados) {
     b('cat-budweiser', 'Budweiser lata 350 ml', '🍺', 5.5, 3.6, 12, '350 ml', 'American lager, lata gelada'),
     b('cat-spaten', 'Spaten lata 350 ml', '🍺', 6, 3.9, 12, '350 ml', 'Puro malte, lata gelada'),
     b('adega-heineken', 'Heineken lata 350 ml', '🍺', 6.5, 4.2, 12, '350 ml', 'Puro malte, lata gelada'),
+    // latinha 269 ml
+    b('cat-skol-269', 'Skol latinha 269 ml', '🍺', 3.5, 2.2, 15, '269 ml', 'Pilsen, latinha gelada'),
+    b('cat-brahma-269', 'Brahma latinha 269 ml', '🍺', 3.5, 2.3, 15, '269 ml', 'Pilsen, latinha gelada'),
+    b('cat-brahma-dm-269', 'Brahma Duplo Malte latinha 269 ml', '🍺', 4, 2.6, 15, '269 ml', 'Puro malte, latinha gelada'),
+    b('cat-antarctica-269', 'Antarctica latinha 269 ml', '🍺', 3.5, 2.2, 15, '269 ml', 'Pilsen, latinha gelada'),
+    b('cat-itaipava-269', 'Itaipava latinha 269 ml', '🍺', 3, 1.9, 12, '269 ml', 'Pilsen, latinha gelada'),
+    b('cat-amstel-269', 'Amstel latinha 269 ml', '🍺', 4.5, 2.9, 12, '269 ml', 'Puro malte, latinha gelada'),
+    b('cat-budweiser-269', 'Budweiser latinha 269 ml', '🍺', 4.5, 2.9, 8, '269 ml', 'American lager, latinha gelada'),
+    b('cat-heineken-269', 'Heineken latinha 269 ml', '🍺', 5.5, 3.6, 8, '269 ml', 'Puro malte, latinha gelada'),
+    // barrigudinha 300 ml (garrafa de vidro retornável)
+    b('cat-skol-300', 'Skol barrigudinha 300 ml', '🍾', 4, 2.4, 23, '300 ml', 'Garrafinha de vidro gelada (retornável)'),
+    b('cat-brahma-300', 'Brahma barrigudinha 300 ml', '🍾', 4, 2.5, 23, '300 ml', 'Garrafinha de vidro gelada (retornável)'),
+    b('cat-brahma-dm-300', 'Brahma Duplo Malte barrigudinha 300 ml', '🍾', 4.5, 2.8, 23, '300 ml', 'Puro malte, garrafinha de vidro (retornável)'),
+    b('cat-antarctica-300', 'Antarctica barrigudinha 300 ml', '🍾', 4, 2.4, 23, '300 ml', 'Garrafinha de vidro gelada (retornável)'),
+    b('cat-original-300', 'Original barrigudinha 300 ml', '🍾', 5.5, 3.4, 23, '300 ml', 'Pilsen, garrafinha de vidro (retornável)'),
     // latão 473 ml
     b('cat-brahma-latao', 'Brahma latão 473 ml', '🍺', 6, 3.9, 12, '473 ml', 'Pilsen, latão gelado'),
     b('cat-skol-latao', 'Skol latão 473 ml', '🍺', 6, 3.8, 12, '473 ml', 'Pilsen, latão gelado'),
@@ -413,6 +428,8 @@ export function adicionarCardapioCompleto(dados: Dados) {
     fardo('adega-f-brahma', 'adega-brahma', 'Brahma lata', 12, 48),
     fardo('adega-f-heineken', 'adega-heineken', 'Heineken lata', 12, 72),
     fardo('cat-f-amstel', 'cat-amstel', 'Amstel lata', 12, 60),
+    fardo('cat-f-skol-269', 'cat-skol-269', 'Skol latinha 269', 15, 48),
+    fardo('cat-f-brahma-269', 'cat-brahma-269', 'Brahma latinha 269', 15, 48),
     // doses e drinks (saem da garrafa aberta, em ml)
     dose('bar-p-cachaca', 'Dose de cachaça', 6, 'bar-cachaca', 50, 'Cachaça'),
     dose('bar-p-vodka', 'Dose de vodka', 8, 'bar-vodka', 50, 'Vodka'),
