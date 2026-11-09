@@ -4,16 +4,19 @@ import CaixaTela from './Caixa'
 import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
 import Estoque from './Estoque'
+import Comandas from './Comandas'
+import { statusComanda } from './comanda'
 import Painel from './Painel'
 import { usePasta } from './pasta'
 import { usePlanilha } from './planilha'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
 
-type Aba = 'venda' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
+type Aba = 'venda' | 'comandas' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
 
 const ABAS: { id: Aba; nome: string; icone: string }[] = [
   { id: 'venda', nome: 'Vender', icone: '🛒' },
+  { id: 'comandas', nome: 'Comandas', icone: '📝' },
   { id: 'painel', nome: 'Painel', icone: '📊' },
   { id: 'estoque', nome: 'Estoque', icone: '📦' },
   { id: 'caixa', nome: 'Caixa', icone: '💰' },
@@ -39,6 +42,7 @@ export default function Espetinho() {
     }
   }, [dados.config.nomeLoja])
 
+  const comandasAbertas = dados.comandas.filter((c) => statusComanda(c, dados.pedidos) === 'aberta').length
   const r = dados.caixaAberto ? resumirCaixa(dados.caixaAberto, dados.pedidos, dados.produtos, dados.movEstoque) : null
 
   return (
@@ -58,6 +62,9 @@ export default function Espetinho() {
               >
                 <span>{a.icone}</span>
                 <span>{a.nome}</span>
+                {a.id === 'comandas' && comandasAbertas > 0 && (
+                  <span className="rounded-full bg-white px-1.5 text-xs font-black text-orange-700">{comandasAbertas}</span>
+                )}
               </button>
             ))}
           </nav>
@@ -156,6 +163,7 @@ export default function Espetinho() {
       )}
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
         {aba === 'venda' && <Venda dados={dados} irPara={setAba} />}
+        {aba === 'comandas' && <Comandas dados={dados} irPara={setAba} />}
         {aba === 'painel' && <Painel dados={dados} irPara={setAba} />}
         {aba === 'estoque' && <Estoque dados={dados} />}
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={setAba} />}

@@ -161,6 +161,8 @@ export function usePlanilha(dados: Dados) {
   const ligado = urlValida(url) && !!config.planilhaChave
   const [estado, setEstado] = useState<Estado>({ tipo: 'desligado' })
   const [remotoMaisNovo, setRemotoMaisNovo] = useState<Remoto | null>(null)
+  /** Endereço da planilha no Google Drive (para abrir e ver as vendas). */
+  const [linkPlanilha, setLinkPlanilha] = useState<string | null>(null)
   const dadosRef = useRef(dados)
   dadosRef.current = dados
   const ignorarProxima = useRef(false)
@@ -202,8 +204,9 @@ export function usePlanilha(dados: Dados) {
     let tentativa: ReturnType<typeof setTimeout> | undefined
     const conferir = () =>
       chamar(url, { acao: 'info', chave: config.planilhaChave })
-        .then((r: { atualizadoEm: string | null; aparelho: string | null }) => {
+        .then((r: { atualizadoEm: string | null; aparelho: string | null; planilhaUrl?: string }) => {
           if (!vivo) return
+          if (r.planilhaUrl) setLinkPlanilha(r.planilhaUrl)
           const local = lerMeta().versao
           const novo = !!r.atualizadoEm && (!local || r.atualizadoEm > local) && r.aparelho !== aparelho()
           if (novo) setRemotoMaisNovo({ atualizadoEm: r.atualizadoEm!, aparelho: r.aparelho })
@@ -265,6 +268,6 @@ export function usePlanilha(dados: Dados) {
     void enviar()
   }, [enviar])
 
-  return { ligado, estado, enviar, carregar, remotoMaisNovo, ignorarRemoto }
+  return { ligado, estado, enviar, carregar, remotoMaisNovo, ignorarRemoto, linkPlanilha }
 }
 export type Planilha = ReturnType<typeof usePlanilha>

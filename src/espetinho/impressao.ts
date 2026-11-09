@@ -1,5 +1,6 @@
 import { NOMES_FORMA, brl, data, espetosParaBrasa, hora, type Resumo } from './dados'
-import type { Caixa, Config, Pedido } from './tipos'
+import { fmtQtd, rotuloComanda } from './comanda'
+import type { Caixa, Comanda, Config, ItemComanda, Pedido } from './tipos'
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -61,7 +62,7 @@ const blocoViagem = (p: Pedido) =>
   p.viagem ? `<div class="viagem">PARA VIAGEM</div>` : `<div class="local">COMER AQUI</div>`
 
 /** Via da churrasqueira: sem preço, letra enorme, só o que precisa ir pra brasa. */
-function viaChurrasqueira(p: Pedido) {
+function viaChurrasqueira(p: Pedido, cab?: { rotulo: string; numero: number; aviso?: string }) {
   const grupos: { titulo: string; itens: Pedido['itens'] }[] = [
     { titulo: 'Espetos', itens: p.itens.filter((i) => i.categoria === 'espeto') },
     { titulo: 'Combos e jantinhas', itens: p.itens.filter((i) => i.categoria === 'combo') },
@@ -74,9 +75,10 @@ function viaChurrasqueira(p: Pedido) {
 
   return `<div class="via">
     <div class="tag">VIA DA CHURRASQUEIRA</div>
-    <div class="num"><small>PEDIDO</small>Nº ${numPedido(p.numero)}</div>
+    <div class="num"><small>${cab?.rotulo ?? 'PEDIDO'}</small>Nº ${numPedido(cab?.numero ?? p.numero)}</div>
+    ${cab?.aviso ? `<div class="local">${cab.aviso}</div>` : ''}
     <div class="c">${hora(p.criadoEm)} · ${data(p.criadoEm)}</div>
-    ${blocoViagem(p)}
+    ${cab ? "" : blocoViagem(p)}
     ${p.cliente ? `<div class="cliente">${esc(p.cliente)}</div>` : ''}
     ${p.viagem && p.embalagens?.length ? `<div class="c grande">EMBALAR: ${p.embalagens.map((e) => `${e.qtd} ${esc(e.nome.toUpperCase())}`).join(' + ')}</div>` : ''}
     ${grupos
@@ -114,15 +116,17 @@ function viaCliente(p: Pedido, config: Config) {
     <div class="c">${data(p.criadoEm)} ${hora(p.criadoEm)}</div>
     ${p.viagem ? `<div class="viagem">PARA VIAGEM</div>` : ''}
     ${p.cliente ? `<div class="c grande">${esc(p.cliente)}</div>` : ''}
+    ${p.parte ? `<div class="tag">CONTA DIVIDIDA — PARTE ${p.parte.replace('/', ' DE ')}</div>` : ''}
     <hr>
     <table>
       ${p.itens
         .map(
-          (i) => `<tr class="linha"><td>${i.qtd}x ${esc(i.nome)}${i.escolhas?.length ? `<br><span class="peq">(${i.escolhas.map((e) => `${e.qtd * i.qtd} ${esc(e.nome)}`).join(', ')})</span>` : ''}${i.obs ? `<br><span class="peq">&gt; ${esc(i.obs)}</span>` : ''}</td>
-          <td class="r">${brl(i.preco * i.qtd)}</td></tr>`,
+          (i) => `<tr class="linha"><td>${fmtQtd(i.qtd)}x ${esc(i.nome)}${i.escolhas?.length ? `<br><span class="peq">(${i.escolhas.map((e) => `${e.qtd * i.qtd} ${esc(e.nome)}`).join(', ')})</span>` : ''}${i.obs ? `<br><span class="peq">&gt; ${esc(i.obs)}</span>` : ''}</td>
+          <td class="r">${p.parte ? '' : brl(i.preco * i.qtd)}</td></tr>`,
         )
         .join('')}
     </table>
+    ${p.parte ? `<div class="c peq">Sua parte dos itens acima</div>` : ''}
     <hr>
     <table>
       ${p.desconto > 0 ? `<tr class="linha"><td>Subtotal</td><td class="r">${brl(p.subtotal)}</td></tr><tr class="linha"><td>Desconto</td><td class="r">-${brl(p.desconto)}</td></tr>` : ''}
@@ -265,6 +269,55 @@ export function imprimirTeste(config: Config) {
     <div class="num"><small>PEDIDO</small>Nº 000</div><div class="viagem">PARA VIAGEM</div>
     <table><tr class="item"><td class="q">3x</td><td>CARNE</td></tr><tr class="obs"><td class="seta r">&gt;&gt;</td><td>BEM PASSADO</td></tr></table>
     <hr><div class="c">Papel de ${config.larguraPapel} mm. Se cortou nas bordas, troque a largura nas configurações.</div></div>`,
+    config,
+  )
+}
+
+/** Itens novos lançados numa comanda: via da churrasqueira com a mesa e o número da comanda. */
+export function imprimirLancamento(c: Comanda, itens: ItemComanda[], config: Config, primeiro: boolean) {
+  const p = {
+    numero: c.numero,
+    criadoEm: new Date().toISOString(),
+    cliente: rotuloComanda(c),
+    viagem: false,
+    itens,
+  } as unknown as Pedido
+  imprimirHTML(viaChurrasqueira(p, { rotulo: 'COMANDA', numero: c.numero, aviso: primeiro ? undefined : 'MAIS ITENS' }), config)
+}
+
+/** Conferência da conta para o cliente ver antes de pagar (não é o cupom de pagamento). */
+export function imprimirConferencia(
+  c: Comanda,
+  linhas: { item: ItemComanda; pago: number; falta: number }[],
+  config: Config,
+  divisao?: { faltam: number; valor: number },
+) {
+  const total = linhas.reduce((s, l) => s + l.item.preco * l.item.qtd, 0)
+  const falta = linhas.reduce((s, l) => s + l.item.preco * l.falta, 0)
+  imprimirHTML(
+    `<div class="via">
+    ${cabecalhoLoja(config)}
+    <div class="tag">CONFERÊNCIA DA CONTA</div>
+    <div class="num"><small>COMANDA</small>Nº ${numPedido(c.numero)}</div>
+    <div class="c grande">${esc(rotuloComanda(c))}</div>
+    <div class="c">${data(new Date().toISOString())} ${hora(new Date().toISOString())}</div>
+    <hr>
+    <table>
+      ${linhas
+        .map(
+          (l) => `<tr class="linha"><td>${l.item.qtd}x ${esc(l.item.nome)}${l.item.escolhas?.length ? `<br><span class="peq">(${l.item.escolhas.map((e) => `${e.qtd * l.item.qtd} ${esc(e.nome)}`).join(', ')})</span>` : ''}${l.pago > 0.0005 ? `<br><span class="peq">já pago: ${fmtQtd(l.pago)}</span>` : ''}</td><td class="r">${brl(l.item.preco * l.item.qtd)}</td></tr>`,
+        )
+        .join('')}
+    </table>
+    <hr>
+    <table>
+      <tr class="linha"><td>Total consumido</td><td class="r">${brl(total)}</td></tr>
+      ${total - falta > 0.004 ? `<tr class="linha"><td>Já pago</td><td class="r">-${brl(total - falta)}</td></tr>` : ''}
+      <tr class="tot"><td>A PAGAR</td><td class="r">${brl(falta)}</td></tr>
+      ${divisao ? `<tr class="linha"><td>Faltam ${divisao.faltam} pessoa(s)</td><td class="r">${brl(divisao.valor)} cada</td></tr>` : ''}
+    </table>
+    <hr><div class="rodape peq">CONFERÊNCIA — NÃO É DOCUMENTO FISCAL</div>
+  </div>`,
     config,
   )
 }
