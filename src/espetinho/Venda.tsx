@@ -12,6 +12,7 @@ import {
   consumoInsumosDosItens,
   embalagensSugeridas,
   montarEmbalagens,
+  precoComEscolhas,
   custoCompleto,
   moverEstoqueInsumos,
   moverEstoqueProdutos,
@@ -104,7 +105,11 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   }
 
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
-  const subtotal = arred(linhas.reduce((s, l) => s + (prodPorId(l.produtoId)?.preco ?? 0) * l.qtd, 0))
+  const precoLinha = (l: Linha) => {
+    const p = prodPorId(l.produtoId)
+    return p ? precoComEscolhas(p, l.escolhas) : 0
+  }
+  const subtotal = arred(linhas.reduce((s, l) => s + precoLinha(l) * l.qtd, 0))
   const qtdItens = linhas.reduce((s, l) => s + l.qtd, 0)
 
   const itensParaRegra = linhas.map((l) => ({ categoria: prodPorId(l.produtoId)?.categoria ?? 'outro', qtd: l.qtd, escolhas: l.escolhas }))
@@ -179,7 +184,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
           nome: p.nome,
           categoria: p.categoria,
           emoji: p.emoji,
-          preco: p.preco,
+          preco: precoComEscolhas(p, l.escolhas),
           custo: arred(custoCompleto(p, insumos, produtos, l.escolhas)),
           qtd: l.qtd,
           obs: l.obs,
@@ -392,7 +397,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
                       <div className="text-sm font-semibold text-rose-700">{l.escolhas.map((e) => `${e.qtd}x ${e.nome}`).join(' + ')}</div>
                     )}
                     <div className="text-sm text-stone-500">
-                      {brl(p.preco)} · <span className="font-semibold text-stone-800">{brl(p.preco * l.qtd)}</span>
+                      {brl(precoLinha(l))} · <span className="font-semibold text-stone-800">{brl(precoLinha(l) * l.qtd)}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -744,6 +749,7 @@ function ModalCombo({
                       <Imagem emoji={p.emoji} imagem={p.imagem} className="h-10 w-10 shrink-0 rounded-lg text-3xl" />
                       <span className="leading-tight">
                         {p.nome}
+                        {!!c.acrescimos?.[pid] && <span className="block text-xs font-bold text-emerald-700">+ {brl(c.acrescimos[pid])}</span>}
                         {livre !== undefined && <span className="block text-xs font-semibold text-stone-500">{acabou ? 'esgotado' : `resta ${Math.max(0, livre)}`}</span>}
                       </span>
                       {q > 0 && (

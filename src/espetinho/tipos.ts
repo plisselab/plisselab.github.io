@@ -48,6 +48,8 @@ export interface Componente {
   qtd: number
   /** Produtos que podem ser escolhidos. */
   opcoes: string[]
+  /** Valor a mais no preço quando o cliente escolhe esta opção (ex.: energético +R$ 3). */
+  acrescimos?: Record<string, number>
 }
 
 export interface Produto {

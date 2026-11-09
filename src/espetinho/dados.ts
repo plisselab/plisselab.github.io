@@ -72,6 +72,16 @@ export function custoCompleto(p: Produto, insumos: Insumo[], produtos: Produto[]
   return total
 }
 
+/** Preço de 1 unidade com as escolhas do combo (soma os acréscimos das opções escolhidas). */
+export function precoComEscolhas(p: Pick<Produto, 'preco' | 'componentes'>, escolhas?: Escolha[]) {
+  let preco = p.preco
+  for (const e of escolhas ?? []) {
+    const c = p.componentes?.find((x) => x.acrescimos?.[e.produtoId] !== undefined)
+    if (c) preco += (c.acrescimos![e.produtoId] ?? 0) * e.qtd
+  }
+  return arred(preco)
+}
+
 /** Quantas unidades de cada produto saem do estoque com estes itens (inclui o que vai dentro dos combos). */
 export function consumoDosItens(itens: Pick<ItemPedido, 'produtoId' | 'qtd' | 'escolhas'>[]) {
   const m: Record<string, number> = {}
