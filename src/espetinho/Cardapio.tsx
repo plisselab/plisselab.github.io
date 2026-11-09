@@ -55,7 +55,7 @@ export default function Cardapio({ dados }: { dados: Dados }) {
         <button
           className={btn.secundario}
           onClick={() => {
-            if (!confirm('Adicionar o cardápio completo de adega? (cervejas, latão, long neck, litrão, fardos, doses, destilados, refrigerantes, energéticos, gelo, carvão e petiscos)\n\nNão duplica o que você já tem e não muda seus preços. Os preços novos são uma base — ajuste para a sua região.')) return
+            if (!confirm('Adicionar o cardápio completo de adega? (cervejas: latinha 269, lata 350, latão 473, barrigudinha 300, long neck, 600 ml e litrão; fardos, doses, destilados, refrigerantes, energéticos, gelo, carvão e petiscos)\n\nNão duplica o que você já tem e não muda seus preços. Os preços novos são uma base — ajuste para a sua região.')) return
             const n = adicionarCardapioCompleto(dados)
             alert(`Pronto! Catálogo com ${n} itens conferido. Ajuste preços e custos em Cadastros e desative o que você não vende.`)
           }}
