@@ -840,7 +840,13 @@ interface ItemSimples {
   precoAvulso: number
   venderSeparado: boolean
   acrescimo: number
+  /** Mistura servida de uma garrafa grande, por ml (ex.: energético 2 L, 250 ml por copão). */
+  porMl?: { precoGarrafa: number; mlGarrafa: number; ml: number }
 }
+
+/** Custo da mistura/gelo em 1 copão. */
+const custoDe = (x: ItemSimples) => (x.porMl ? (x.porMl.mlGarrafa > 0 ? (x.porMl.precoGarrafa / x.porMl.mlGarrafa) * x.porMl.ml : 0) : x.custo)
+const insumoDaMistura = (idMistura: string) => `copao-mixins-${idMistura.replace(/^copao-mix-/, '')}`
 
 /**
  * Copão = dose de destilado + gelo de sabor + mistura (energético ou suco).
@@ -861,14 +867,19 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
     const ja = dados.produtos.filter((p) => p.id.startsWith(prefixo))
     if (!ja.length) return padrao
     const ref = dados.produtos.find((p) => p.id.startsWith('copao-') && p.componentes?.length)
-    return ja.map((p) => ({
-      id: p.id,
-      nome: p.nome,
-      custo: p.custoDireto,
-      precoAvulso: p.preco,
-      venderSeparado: p.ativo,
-      acrescimo: ref?.componentes?.find((c) => c.acrescimos?.[p.id] !== undefined)?.acrescimos?.[p.id] ?? 0,
-    }))
+    return ja.map((p) => {
+      const f = p.ficha.find((x) => x.insumoId.startsWith('copao-mixins-'))
+      const ins = f && dados.insumos.find((i) => i.id === f.insumoId)
+      return {
+        id: p.id,
+        nome: p.nome,
+        custo: p.custoDireto,
+        precoAvulso: p.preco,
+        venderSeparado: p.ativo,
+        acrescimo: ref?.componentes?.find((c) => c.acrescimos?.[p.id] !== undefined)?.acrescimos?.[p.id] ?? 0,
+        ...(f && ins ? { porMl: { precoGarrafa: ins.precoCompra, mlGarrafa: ins.qtdCompra * 1000, ml: f.qtd } } : {}),
+      }
+    })
   }
   const [gelos, setGelos] = useState<ItemSimples[]>(() =>
     doTipo('copao-gelo-', [
@@ -879,8 +890,17 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
   )
   const [misturas, setMisturas] = useState<ItemSimples[]>(() =>
     doTipo('copao-mix-', [
-      { id: 'copao-mix-energetico', nome: 'Energético (lata)', custo: 6, precoAvulso: 12, venderSeparado: true, acrescimo: 0 },
-      { id: 'copao-mix-suco', nome: 'Suco', custo: 2, precoAvulso: 6, venderSeparado: false, acrescimo: 0 },
+      {
+        id: 'copao-mix-energetico-2l',
+        nome: 'Energético (garrafa 2 L)',
+        custo: 0,
+        precoAvulso: 8,
+        venderSeparado: false,
+        acrescimo: 0,
+        porMl: { precoGarrafa: 12, mlGarrafa: 2000, ml: 250 },
+      },
+      { id: 'copao-mix-energetico', nome: 'Energético (lata)', custo: 6, precoAvulso: 12, venderSeparado: true, acrescimo: 3 },
+      { id: 'copao-mix-suco', nome: 'Suco', custo: 0, precoAvulso: 6, venderSeparado: false, acrescimo: 0, porMl: { precoGarrafa: 7, mlGarrafa: 1000, ml: 250 } },
     ]),
   )
   const [custoCopo, setCustoCopo] = useState(() => {
@@ -896,7 +916,7 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
   }
   const faixa = (lista: ItemSimples[], f: (x: ItemSimples) => number) => (lista.length ? [Math.min(...lista.map(f)), Math.max(...lista.map(f))] : [0, 0])
   const [gMin, gMax] = faixa(gelos, (g) => g.custo)
-  const [mMin, mMax] = faixa(misturas, (m) => m.custo)
+  const [mMin, mMax] = faixa(misturas, custoDe)
   const usadas = linhas.filter((l) => l.usar)
 
   function addSabor(nome: string) {
@@ -911,8 +931,25 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
   function salvar() {
     const copoId = 'copao-copo'
     dados.setInsumos((is) => {
-      const sem = is.filter((i) => i.id !== copoId)
-      return custoCopo > 0 ? [...sem, { id: copoId, nome: 'Copo de copão (descartável)', unidade: 'un', precoCompra: custoCopo, qtdCompra: 1, grupo: 'Bar' }] : sem
+      let lista = is.filter((i) => i.id !== copoId)
+      if (custoCopo > 0) lista.push({ id: copoId, nome: 'Copo de copão (descartável)', unidade: 'un', precoCompra: custoCopo, qtdCompra: 1, grupo: 'Bar' })
+      // misturas por ml viram bebidas em litros (estoque em L, como os destilados)
+      for (const m of misturas) {
+        if (!m.porMl) continue
+        const id = insumoDaMistura(m.id)
+        const atual = lista.find((i) => i.id === id)
+        const novo = {
+          id,
+          nome: m.nome,
+          unidade: 'L' as const,
+          precoCompra: m.porMl.precoGarrafa,
+          qtdCompra: m.porMl.mlGarrafa / 1000,
+          grupo: 'Bebidas',
+          estoque: atual?.estoque ?? 0,
+        }
+        lista = atual ? lista.map((i) => (i.id === id ? novo : i)) : [...lista, novo]
+      }
+      return lista
     })
     dados.setProdutos((ps) => {
       const lista = [...ps]
@@ -930,8 +967,8 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
           categoria: 'bebida',
           preco: m.precoAvulso,
           emoji: /energ/i.test(m.nome) ? '⚡' : '🧃',
-          ficha: [],
-          custoDireto: m.custo,
+          ficha: m.porMl ? [{ insumoId: insumoDaMistura(m.id), qtd: m.porMl.ml }] : [],
+          custoDireto: m.porMl ? 0 : m.custo,
           ativo: m.venderSeparado,
         })
       const acrescimos = Object.fromEntries(misturas.filter((m) => m.acrescimo > 0).map((m) => [m.id, m.acrescimo]))
@@ -975,8 +1012,63 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
                   ×
                 </button>
               </div>
+              {comAcrescimo && (
+                <div className="mt-1.5 flex gap-1 text-xs font-bold">
+                  {[
+                    [false, 'Por unidade (lata)'],
+                    [true, 'Por ml (garrafa grande)'],
+                  ].map(([ml, r]) => (
+                    <button
+                      key={String(ml)}
+                      className={`rounded-full px-2.5 py-1 ${!!x.porMl === ml ? 'bg-violet-600 text-white' : 'bg-white text-stone-700'}`}
+                      onClick={() => muda({ porMl: ml ? (x.porMl ?? { precoGarrafa: 12, mlGarrafa: 2000, ml: 250 }) : undefined })}
+                    >
+                      {r as string}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {x.porMl && (
+                <div className="mt-1.5 flex flex-wrap items-end gap-2">
+                  <CampoNumero
+                    className="w-28"
+                    rotulo="Garrafa custa"
+                    prefixo="R$"
+                    valor={x.porMl.precoGarrafa}
+                    aoMudar={(v) => muda({ porMl: { ...x.porMl!, precoGarrafa: v } })}
+                  />
+                  <CampoNumero
+                    className="w-28"
+                    rotulo="Garrafa tem"
+                    sufixo="ml"
+                    valor={x.porMl.mlGarrafa}
+                    aoMudar={(v) => muda({ porMl: { ...x.porMl!, mlGarrafa: v } })}
+                  />
+                  <CampoNumero
+                    className="w-28"
+                    rotulo="Vai no copão"
+                    sufixo="ml"
+                    valor={x.porMl.ml}
+                    aoMudar={(v) => muda({ porMl: { ...x.porMl!, ml: Math.round(v) } })}
+                  />
+                  <div className="flex flex-wrap gap-1 pb-2">
+                    {[200, 250, 300].map((ml) => (
+                      <button
+                        key={ml}
+                        className={`rounded-full px-2 py-0.5 text-xs font-bold ${x.porMl!.ml === ml ? 'bg-violet-600 text-white' : 'bg-white'}`}
+                        onClick={() => muda({ porMl: { ...x.porMl!, ml } })}
+                      >
+                        {ml} ml
+                      </button>
+                    ))}
+                  </div>
+                  <div className="w-full text-xs text-violet-900">
+                    = <b>{brl(custoDe(x))}</b> por copão · a garrafa dá {x.porMl.ml > 0 ? Math.floor(x.porMl.mlGarrafa / x.porMl.ml) : 0} copões
+                  </div>
+                </div>
+              )}
               <div className="mt-1.5 flex flex-wrap items-end gap-2">
-                <CampoNumero className="w-28" rotulo="Custo" prefixo="R$" valor={x.custo} aoMudar={(v) => muda({ custo: v })} />
+                {!x.porMl && <CampoNumero className="w-28" rotulo="Custo" prefixo="R$" valor={x.custo} aoMudar={(v) => muda({ custo: v })} />}
                 {comAcrescimo && (
                   <CampoNumero className="w-32" rotulo="+ no copão" prefixo="R$" valor={x.acrescimo} aoMudar={(v) => muda({ acrescimo: v })} />
                 )}
@@ -1015,7 +1107,7 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
             const cMin = base + gMin + mMin
             const cMax = base + gMax + mMax
             // lucro de cada mistura com o preço dela (preço + acréscimo), no gelo mais caro e no mais barato
-            const lucros = misturas.flatMap((m) => [l.preco + m.acrescimo - (base + gMax + m.custo), l.preco + m.acrescimo - (base + gMin + m.custo)])
+            const lucros = misturas.flatMap((m) => [l.preco + m.acrescimo - (base + gMax + custoDe(m)), l.preco + m.acrescimo - (base + gMin + custoDe(m))])
             const lMin = lucros.length ? Math.min(...lucros) : l.preco - cMax
             const lMax = lucros.length ? Math.max(...lucros) : l.preco - cMin
             const lucroMin = lMin
