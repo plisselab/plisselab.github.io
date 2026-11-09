@@ -243,6 +243,7 @@ export function imprimirRelatorio(caixa: Caixa, r: Resumo, config: Config) {
     <table>
       ${linha('Faturamento', brl(r.faturamento))}
       ${linha('- Custo dos produtos', brl(r.cmv))}
+      ${r.cortesias.qtd ? linha('  (cortesias/consumo)', brl(r.cortesias.custo)) : ''}
       ${linha('- Taxas maquininha', brl(r.taxas))}
       ${linha('- Despesas do dia', brl(r.despesas))}
       ${r.embalagens.map((e) => linha(`(inclui ${e.qtd} ${esc(e.nome.toLowerCase())})`, brl(e.custo))).join('')}

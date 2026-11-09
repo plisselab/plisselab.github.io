@@ -468,12 +468,16 @@ export interface Resumo {
   compras: number
   /** Embalagens para viagem usadas (já incluídas no custo dos produtos). */
   embalagens: { nome: string; qtd: number; custo: number }[]
+  /** Saídas sem venda (consumo próprio, cortesia…): custo já está no CMV; valor = quanto valeria vendido. */
+  cortesias: { qtd: number; custo: number; valor: number; porMotivo: { motivo: string; qtd: number; custo: number; valor: number }[] }
 }
 
 export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Produto[], movEstoque: MovEstoque[] = []): Resumo {
   const doCaixa = todosPedidos.filter((p) => p.caixaId === caixa.id)
   const pedidos = doCaixa.filter((p) => !p.cancelado)
   const cancelados = doCaixa.filter((p) => p.cancelado)
+  const vendas = pedidos.filter((p) => !p.cortesia)
+  const cortesias = pedidos.filter((p) => p.cortesia)
   const porForma: Record<FormaPagamento, number> = { dinheiro: 0, pix: 0, debito: 0, credito: 0, app: 0 }
   let faturamento = 0
   let descontos = 0
@@ -561,7 +565,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
   return {
     pedidos,
     cancelados,
-    qtdPedidos: pedidos.length,
+    qtdPedidos: vendas.length,
     qtdViagem: pedidos.filter((p) => p.viagem).length,
     // conta dividida gera frações (⅓ de espeto); arredonda para não aparecer 2,9999
     espetosVendidos: Math.round(espetosVendidos * 100) / 100,
@@ -579,7 +583,16 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     lucroBruto,
     lucroLiquido,
     margem: faturamento > 0 ? (lucroLiquido / faturamento) * 100 : 0,
-    ticketMedio: pedidos.length ? faturamento / pedidos.length : 0,
+    ticketMedio: vendas.length ? faturamento / vendas.length : 0,
+    cortesias: {
+      qtd: cortesias.length,
+      custo: cortesias.reduce((s, p) => s + p.custoTotal, 0),
+      valor: cortesias.reduce((s, p) => s + (p.cortesia?.valor ?? 0), 0),
+      porMotivo: [...new Set(cortesias.map((p) => p.cortesia!.motivo))].map((motivo) => {
+        const ps = cortesias.filter((p) => p.cortesia!.motivo === motivo)
+        return { motivo, qtd: ps.length, custo: ps.reduce((s, p) => s + p.custoTotal, 0), valor: ps.reduce((s, p) => s + (p.cortesia?.valor ?? 0), 0) }
+      }),
+    },
     trocoInicial: caixa.trocoInicial,
     dinheiroEsperado: caixa.trocoInicial + porForma.dinheiro + suprimentos - sangrias - despesasDinheiro,
     emConta: porForma.pix + porForma.debito + porForma.credito + porForma.app - taxas - despesasConta,
