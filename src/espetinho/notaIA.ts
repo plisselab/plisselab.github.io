@@ -186,12 +186,20 @@ const GENERICOS = new Set(
   'cerveja lata latao latinha longneck garrafa garrafinha barrigudinha litrao pet vidro retornavel pilsen puro malte vodka whisky gin cachaca conhaque vinho tinto suave seco refrigerante agua mineral com sem gas suco energetico gelo saco carvao pacote fardo caixa cx un und unid pack de do da'.split(' '),
 )
 
-export interface Casamento {
-  produto: Produto | null
+/** Qualquer coisa que pode casar com uma linha da nota (produto ou insumo). */
+export interface Candidato {
+  id: string
+  nome: string
+  codigos?: string[]
+  nomesNota?: string[]
+}
+
+export interface Casamento<T extends Candidato = Produto> {
+  produto: T | null
   certeza: 'codigo' | 'nome-salvo' | 'parecido' | 'nenhum'
 }
 
-export function casarItem(item: ItemLido, produtos: Produto[]): Casamento {
+export function casarItem<T extends Candidato>(item: ItemLido, produtos: T[]): Casamento<T> {
   const cod = item.codigoBarras ? limparCodigo(item.codigoBarras) : ''
   if (cod.length >= 8) {
     const p = produtos.find((x) => x.codigos?.some((c) => limparCodigo(c) === cod))
@@ -202,7 +210,7 @@ export function casarItem(item: ItemLido, produtos: Produto[]): Casamento {
   if (salvo) return { produto: salvo, certeza: 'nome-salvo' }
 
   const tn = tokens(item.descricao)
-  let melhor: Produto | null = null
+  let melhor: T | null = null
   let nota = 0
   for (const p of produtos) {
     const tp = tokens(p.nome)

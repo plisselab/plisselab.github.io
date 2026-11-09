@@ -13,6 +13,10 @@ export interface Insumo {
   estoque?: number
   /** Grupo livre para organizar a lista (Carnes, Embalagens, Temperos…). */
   grupo?: string
+  /** Como aparece escrito nas notas dos fornecedores (aprendido na leitura por foto). */
+  nomesNota?: string[]
+  /** Códigos de barras de embalagens deste insumo. */
+  codigos?: string[]
 }
 
 /** Regra de embalagem usada só quando o pedido é para viagem (ex.: saquinho térmico). */
@@ -74,6 +78,8 @@ export interface Produto {
   codigos?: string[]
   /** Quantas unidades vêm na caixa/fardo do fornecedor (para sugerir a compra em caixas). */
   unidadesCaixa?: number
+  /** Ficha técnica de antes de passar a comprar pronto (guardada para poder voltar). */
+  fichaAnterior?: ItemFicha[]
   /** Como o produto aparece escrito nas notas dos fornecedores (aprendido na leitura por foto). */
   nomesNota?: string[]
   /** Cardápio: descrição curta (ex.: "Cerveja puro malte, lata gelada"). */
