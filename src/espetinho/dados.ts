@@ -322,6 +322,8 @@ export const CONFIG_INICIAL: Config = {
   planilhaUrl: '',
   planilhaChave: '',
   planilhaAuto: true,
+  espetoHoje: true,
+  diasCobertura: 14,
 }
 
 // ---------- armazenamento ----------
@@ -634,3 +636,60 @@ export function aplicarBackup(d: Dados, b: Partial<ReturnType<typeof montarBacku
   if (b.config)
     d.setConfig({ ...b.config, planilhaUrl: d.config.planilhaUrl, planilhaChave: d.config.planilhaChave, planilhaAuto: d.config.planilhaAuto })
 }
+
+// ---------- adega: código de barras, compras e reposição ----------
+
+/** Só os dígitos/letras do código (leitores às vezes mandam espaços). */
+export const limparCodigo = (c: string) => c.replace(/\s+/g, '').trim()
+
+export function acharPorCodigo(produtos: Produto[], codigo: string) {
+  const c = limparCodigo(codigo)
+  if (!c) return undefined
+  return produtos.find((p) => p.codigos?.some((x) => limparCodigo(x) === c))
+}
+
+/** Busca por nome: “heine lat” encontra “Heineken lata”. */
+export function buscarProdutos(produtos: Produto[], termo: string) {
+  const norm = (t: string) =>
+    t
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+  const partes = norm(termo).split(/\s+/).filter(Boolean)
+  if (!partes.length) return produtos
+  return produtos.filter((p) => {
+    const alvo = norm(`${p.nome} ${(p.codigos ?? []).join(' ')}`)
+    return partes.every((x) => alvo.includes(x))
+  })
+}
+
+/** Unidades que saíram de cada produto (inclui as de dentro de fardos/combos) desde uma data. */
+export function saidasDesde(pedidos: Pedido[], desdeIso: string) {
+  return consumoDosItens(pedidos.filter((p) => !p.cancelado && p.criadoEm >= desdeIso).flatMap((p) => p.itens))
+}
+
+/** Última compra de um produto: quanto pagou por unidade, de quem e quando. */
+export function ultimaCompra(movs: MovEstoque[], produtoId: string) {
+  for (let i = movs.length - 1; i >= 0; i--) {
+    const m = movs[i]
+    if (m.tipo === 'compra' && m.produtoId === produtoId && m.qtd > 0 && m.valor) {
+      return { unitario: m.valor / m.qtd, fornecedor: m.fornecedor ?? '', em: m.criadoEm, qtd: m.qtd }
+    }
+  }
+  return null
+}
+
+/** Menor preço por unidade pago nos últimos 90 dias (e de quem), para comparar fornecedores. */
+export function melhorCompra(movs: MovEstoque[], produtoId: string) {
+  const desde = new Date(Date.now() - 90 * 86400000).toISOString()
+  let melhor: { unitario: number; fornecedor: string; em: string } | null = null
+  for (const m of movs) {
+    if (m.tipo !== 'compra' || m.produtoId !== produtoId || m.qtd <= 0 || !m.valor || m.criadoEm < desde) continue
+    const u = m.valor / m.qtd
+    if (!melhor || u < melhor.unitario) melhor = { unitario: u, fornecedor: m.fornecedor ?? '', em: m.criadoEm }
+  }
+  return melhor
+}
+
+export const fornecedoresConhecidos = (movs: MovEstoque[]) =>
+  [...new Set(movs.map((m) => m.fornecedor?.trim()).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b))

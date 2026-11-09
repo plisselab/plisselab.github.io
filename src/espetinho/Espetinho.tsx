@@ -5,6 +5,8 @@ import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
 import Estoque from './Estoque'
 import Comandas from './Comandas'
+import Compras from './Compras'
+import Reposicao from './Reposicao'
 import { statusComanda } from './comanda'
 import Painel from './Painel'
 import { usePasta } from './pasta'
@@ -13,11 +15,13 @@ import { lerConexaoDaUrl, limparUrl } from './conectar'
 import Relatorios from './Relatorios'
 import Venda from './Venda'
 
-type Aba = 'venda' | 'comandas' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
+type Aba = 'venda' | 'comandas' | 'compras' | 'reposicao' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
 
 const ABAS: { id: Aba; nome: string; icone: string }[] = [
   { id: 'venda', nome: 'Vender', icone: '🛒' },
   { id: 'comandas', nome: 'Comandas', icone: '📝' },
+  { id: 'compras', nome: 'Compras', icone: '🧾' },
+  { id: 'reposicao', nome: 'Reposição', icone: '🔁' },
   { id: 'painel', nome: 'Painel', icone: '📊' },
   { id: 'estoque', nome: 'Estoque', icone: '📦' },
   { id: 'caixa', nome: 'Caixa', icone: '💰' },
@@ -289,6 +293,8 @@ export default function Espetinho() {
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
         {aba === 'venda' && <Venda dados={dados} irPara={irPara} />}
         {aba === 'comandas' && <Comandas dados={dados} irPara={irPara} />}
+        {aba === 'compras' && <Compras dados={dados} />}
+        {aba === 'reposicao' && <Reposicao dados={dados} />}
         {aba === 'painel' && <Painel dados={dados} irPara={irPara} />}
         {aba === 'estoque' && <Estoque dados={dados} />}
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={irPara} />}

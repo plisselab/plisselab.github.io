@@ -68,8 +68,12 @@ export interface Produto {
   ativo: boolean
   /** Unidades prontas (espetos montados, latas na geladeira). Sem valor = não controla. */
   estoque?: number
-  /** Só para combos/jantinhas. */
+  /** Só para combos/jantinhas (e fardos: N unidades de uma bebida). */
   componentes?: Componente[]
+  /** Códigos de barras (EAN) — o leitor bipa e o produto entra na venda ou na compra. */
+  codigos?: string[]
+  /** Quantas unidades vêm na caixa/fardo do fornecedor (para sugerir a compra em caixas). */
+  unidadesCaixa?: number
 }
 
 export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito'
@@ -187,6 +191,10 @@ export interface Config {
   planilhaChave: string
   /** Enviar para a planilha sozinho a cada mudança. */
   planilhaAuto: boolean
+  /** Dia de espeto: mostra espetos/combos na venda e imprime a via da churrasqueira. */
+  espetoHoje: boolean
+  /** Reposição: comprar para durar quantos dias. */
+  diasCobertura: number
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'
@@ -209,6 +217,9 @@ export interface MovEstoque {
   /** Montagem: insumos usados. */
   consumo?: { insumoId: string; nome: string; qtd: number; unidade: string }[]
   obs?: string
+  /** Compra: de quem comprou e qual nota (várias linhas da mesma compra têm o mesmo compraId). */
+  fornecedor?: string
+  compraId?: string
 }
 
 /** Item anotado numa comanda (mesa). Sai do estoque ao ser lançado; entra no caixa quando é pago. */
