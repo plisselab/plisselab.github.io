@@ -21,10 +21,13 @@ import {
   moverEstoqueProdutos,
   novoId,
   taxaDaForma,
+  taxaDoCanal,
+  precoDelivery,
+  NOMES_CANAL,
   type Dados,
 } from './dados'
 import { imprimirPedido } from './impressao'
-import type { Categoria, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
+import type { Canal, Categoria, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
 import { CampoNumero, Imagem, Modal, btn } from './ui'
 import { LerComCamera, cameraLeSuportada, useLeitorCodigo } from './leitor'
 
@@ -52,6 +55,9 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [cliente, setCliente] = useState('')
   const [viagem, setViagem] = useState(false)
+  const [canal, setCanal] = useState<Canal>('balcao')
+  const app = canal !== 'balcao'
+  const precoBase = (p: Produto) => (app ? precoDelivery(p, config) : p.preco)
   const [filtro, setFiltro] = useState<Filtro>('todos')
   const [busca, setBusca] = useState('')
   const [codigoNovo, setCodigoNovo] = useState<string | null>(null)
@@ -128,7 +134,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
   const precoLinha = (l: Linha) => {
     const p = prodPorId(l.produtoId)
-    return p ? precoComEscolhas(p, l.escolhas) : 0
+    return p ? precoComEscolhas(p, l.escolhas, precoBase(p)) : 0
   }
   const subtotal = arred(linhas.reduce((s, l) => s + precoLinha(l) * l.qtd, 0))
   const qtdItens = linhas.reduce((s, l) => s + l.qtd, 0)
@@ -212,6 +218,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     setLinhas([])
     setCliente('')
     setViagem(false)
+    setCanal('balcao')
     setEmbManual(null)
     setObsAberta(null)
   }
@@ -226,7 +233,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
           nome: p.nome,
           categoria: p.categoria,
           emoji: p.emoji,
-          preco: precoComEscolhas(p, l.escolhas),
+          preco: precoComEscolhas(p, l.escolhas, precoBase(p)),
           custo: arred(custoCompleto(p, insumos, produtos, l.escolhas)),
           qtd: l.qtd,
           obs: l.obs,
@@ -269,7 +276,10 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
       pagamentos: pagamentos.filter((p) => p.valor > 0),
       recebidoDinheiro: recebidoDinheiro > 0 ? recebidoDinheiro : 0,
       troco: recebidoDinheiro > emDinheiro ? arred(recebidoDinheiro - emDinheiro) : 0,
-      taxas: arred(pagamentos.reduce((s, p) => s + (p.valor * taxaDaForma(p.forma, config)) / 100, 0)),
+      taxas: arred(
+        pagamentos.reduce((s, p) => s + (p.valor * taxaDaForma(p.forma, config)) / 100, 0) + (total * taxaDoCanal(canal, config)) / 100,
+      ),
+      ...(app ? { canal } : {}),
       custoTotal: arred(itens.reduce((s, i) => s + i.custo * i.qtd, 0) + custoEmbalagens),
       ...(embalagens.length ? { embalagens } : {}),
       cancelado: false,
@@ -375,7 +385,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
                 <Imagem emoji={p.emoji} imagem={p.imagem} className="h-20 w-full text-5xl sm:h-24" />
                 <div className="w-full px-2 pb-2 pt-1">
                   <div className="line-clamp-2 text-base font-extrabold leading-tight text-stone-900">{p.nome}</div>
-                  <div className="text-lg font-bold text-orange-700">{brl(p.preco)}</div>
+                  <div className="text-lg font-bold text-orange-700">{brl(precoBase(p))}</div>
                 </div>
                 {qtd > 0 && (
                   <span className="absolute left-1.5 top-1.5 flex h-9 min-w-9 items-center justify-center rounded-full bg-orange-600 px-2 text-lg font-black text-white shadow">
@@ -429,6 +439,26 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
             🛍️ Para viagem
           </button>
         </div>
+
+        <div className="mt-2 grid grid-cols-3 gap-1 rounded-xl bg-stone-100 p-1 text-sm font-bold">
+          {(['balcao', 'ifood', '99food'] as Canal[]).map((c) => (
+            <button
+              key={c}
+              onClick={() => {
+                setCanal(c)
+                if (c !== 'balcao') setViagem(true)
+              }}
+              className={`rounded-lg py-1.5 ${canal === c ? (c === 'balcao' ? 'bg-white text-stone-900 shadow' : c === 'ifood' ? 'bg-red-600 text-white' : 'bg-amber-400 text-stone-900') : 'text-stone-500'}`}
+            >
+              {c === 'balcao' ? '🏪' : '🛵'} {NOMES_CANAL[c]}
+            </button>
+          ))}
+        </div>
+        {app && (
+          <p className="mt-1 text-xs text-stone-500">
+            Preços do {NOMES_CANAL[canal]} (+{config.acrescimoDelivery}% ou o preço próprio do produto). Comissão de {taxaDoCanal(canal, config)}% sai do lucro.
+          </p>
+        )}
 
         {viagem && Object.keys(embQtds).length > 0 && (
           <div className="mt-2 rounded-xl bg-orange-50 p-2">
@@ -596,7 +626,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
       )}
 
       {pagando && (
-        <ModalPagamento subtotal={subtotal} viagem={viagem} aoFechar={() => setPagando(false)} aoConfirmar={finalizar} />
+        <ModalPagamento subtotal={subtotal} viagem={viagem} app={app ? NOMES_CANAL[canal] : undefined} aoFechar={() => setPagando(false)} aoConfirmar={finalizar} />
       )}
 
       {ultimo && (
@@ -626,16 +656,19 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
 export function ModalPagamento({
   subtotal,
   viagem,
+  app,
   aoFechar,
   aoConfirmar,
 }: {
   subtotal: number
   viagem: boolean
+  /** Pedido de app de delivery (nome do app): mostra “Pago no app”. */
+  app?: string
   aoFechar: () => void
   aoConfirmar: (desconto: number, pagamentos: Pagamento[], recebidoDinheiro: number) => void
 }) {
   const [desconto, setDesconto] = useState(0)
-  const [pagamentos, setPagamentos] = useState<Pagamento[]>([])
+  const [pagamentos, setPagamentos] = useState<Pagamento[]>(app ? [{ forma: 'app', valor: subtotal }] : [])
   const [recebido, setRecebido] = useState(0)
   const total = arred(Math.max(0, subtotal - desconto))
   const pago = arred(pagamentos.reduce((s, p) => s + p.valor, 0))
@@ -667,14 +700,14 @@ export function ModalPagamento({
       <div className="rounded-2xl bg-stone-900 p-4 text-white">
         <div className="flex items-center justify-between text-sm text-stone-300">
           <span>Total a pagar</span>
-          {viagem && <span className="rounded bg-orange-600 px-2 py-0.5 font-bold text-white">PARA VIAGEM</span>}
+          {viagem && <span className="rounded bg-orange-600 px-2 py-0.5 font-bold text-white">{app ? `${app.toUpperCase()} — VIAGEM` : 'PARA VIAGEM'}</span>}
         </div>
         <div className="text-4xl font-black">{brl(total)}</div>
         {desconto > 0 && <div className="text-sm text-stone-300">Subtotal {brl(subtotal)} − desconto {brl(desconto)}</div>}
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        {FORMAS.map((f) => {
+        {(app ? (['app', ...FORMAS] as Pagamento['forma'][]) : FORMAS).map((f) => {
           const sel = pagamentos.some((p) => p.forma === f)
           return (
             <button
@@ -682,7 +715,7 @@ export function ModalPagamento({
               onClick={() => escolher(f)}
               className={`rounded-xl border-4 py-4 text-lg font-extrabold ${sel ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-800'}`}
             >
-              {EMOJI_FORMA[f]} {NOMES_FORMA[f]}
+              {EMOJI_FORMA[f]} {f === 'app' ? `Pago no ${app}` : NOMES_FORMA[f]}
             </button>
           )
         })}
@@ -693,7 +726,7 @@ export function ModalPagamento({
           {pagamentos.map((p, idx) => (
             <div key={p.forma} className="rounded-xl border-2 border-stone-200 p-3">
               <div className="flex items-center gap-2">
-                <span className="w-24 font-bold">{NOMES_FORMA[p.forma]}</span>
+                <span className="w-24 font-bold">{p.forma === 'app' && app ? `Pago no ${app}` : NOMES_FORMA[p.forma]}</span>
                 <CampoNumero
                   className="flex-1"
                   prefixo="R$"

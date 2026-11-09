@@ -13,15 +13,17 @@ import { usePasta } from './pasta'
 import { urlValida, usePlanilha } from './planilha'
 import { lerConexaoDaUrl, limparUrl } from './conectar'
 import Relatorios from './Relatorios'
+import Cardapio from './Cardapio'
 import Venda from './Venda'
 
-type Aba = 'venda' | 'comandas' | 'compras' | 'reposicao' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
+type Aba = 'venda' | 'comandas' | 'compras' | 'reposicao' | 'cardapio' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
 
 const ABAS: { id: Aba; nome: string; icone: string }[] = [
   { id: 'venda', nome: 'Vender', icone: '🛒' },
   { id: 'comandas', nome: 'Comandas', icone: '📝' },
   { id: 'compras', nome: 'Compras', icone: '🧾' },
   { id: 'reposicao', nome: 'Reposição', icone: '🔁' },
+  { id: 'cardapio', nome: 'Cardápio', icone: '📋' },
   { id: 'painel', nome: 'Painel', icone: '📊' },
   { id: 'estoque', nome: 'Estoque', icone: '📦' },
   { id: 'caixa', nome: 'Caixa', icone: '💰' },
@@ -295,6 +297,7 @@ export default function Espetinho() {
         {aba === 'comandas' && <Comandas dados={dados} irPara={irPara} />}
         {aba === 'compras' && <Compras dados={dados} />}
         {aba === 'reposicao' && <Reposicao dados={dados} />}
+        {aba === 'cardapio' && <Cardapio dados={dados} />}
         {aba === 'painel' && <Painel dados={dados} irPara={irPara} />}
         {aba === 'estoque' && <Estoque dados={dados} />}
         {aba === 'caixa' && <CaixaTela dados={dados} irPara={irPara} />}

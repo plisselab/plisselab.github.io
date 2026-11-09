@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocalStorage } from '../hooks/useLocalStorage'
-import type { Caixa, Categoria, Comanda, Config, EmbalagemPedido, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
+import type { Caixa, Canal, Categoria, Comanda, Config, EmbalagemPedido, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
 
 export const novoId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -23,8 +23,9 @@ export const NOMES_FORMA: Record<FormaPagamento, string> = {
   pix: 'Pix',
   debito: 'Débito',
   credito: 'Crédito',
+  app: 'Pago no app',
 }
-export const EMOJI_FORMA: Record<FormaPagamento, string> = { dinheiro: '💵', pix: '⚡', debito: '💳', credito: '💳' }
+export const EMOJI_FORMA: Record<FormaPagamento, string> = { dinheiro: '💵', pix: '⚡', debito: '💳', credito: '💳', app: '🛵' }
 export const FORMAS: FormaPagamento[] = ['dinheiro', 'pix', 'debito', 'credito']
 
 export const NOMES_CATEGORIA: Record<Categoria, string> = {
@@ -73,8 +74,8 @@ export function custoCompleto(p: Produto, insumos: Insumo[], produtos: Produto[]
 }
 
 /** Preço de 1 unidade com as escolhas do combo (soma os acréscimos das opções escolhidas). */
-export function precoComEscolhas(p: Pick<Produto, 'preco' | 'componentes'>, escolhas?: Escolha[]) {
-  let preco = p.preco
+export function precoComEscolhas(p: Pick<Produto, 'preco' | 'componentes'>, escolhas?: Escolha[], base = p.preco) {
+  let preco = base
   for (const e of escolhas ?? []) {
     const c = p.componentes?.find((x) => x.acrescimos?.[e.produtoId] !== undefined)
     if (c) preco += (c.acrescimos![e.produtoId] ?? 0) * e.qtd
@@ -324,6 +325,26 @@ export const CONFIG_INICIAL: Config = {
   planilhaAuto: true,
   espetoHoje: true,
   diasCobertura: 14,
+  taxaIfood: 15.2,
+  taxa99: 15,
+  acrescimoDelivery: 20,
+}
+
+export const NOMES_CANAL: Record<Canal, string> = { balcao: 'Balcão', ifood: 'iFood', '99food': '99Food' }
+
+/** Comissão do app de delivery, em %. */
+export function taxaDoCanal(canal: Canal | undefined, config: Config) {
+  if (canal === 'ifood') return config.taxaIfood ?? 0
+  if (canal === '99food') return config.taxa99 ?? 0
+  return 0
+}
+
+/** Preço do produto no iFood/99Food: o preço próprio do app ou o do balcão + acréscimo (arredondado para cima de 10 em 10 centavos). */
+export function precoDelivery(p: Pick<Produto, 'preco' | 'precoDelivery'>, config: Pick<Config, 'acrescimoDelivery'>) {
+  if (p.precoDelivery) return p.precoDelivery
+  const pc = config.acrescimoDelivery ?? 0
+  if (!pc) return p.preco
+  return Math.ceil(arred(p.preco * (1 + pc / 100)) * 10 - 1e-6) / 10
 }
 
 // ---------- armazenamento ----------
@@ -453,7 +474,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
   const doCaixa = todosPedidos.filter((p) => p.caixaId === caixa.id)
   const pedidos = doCaixa.filter((p) => !p.cancelado)
   const cancelados = doCaixa.filter((p) => p.cancelado)
-  const porForma: Record<FormaPagamento, number> = { dinheiro: 0, pix: 0, debito: 0, credito: 0 }
+  const porForma: Record<FormaPagamento, number> = { dinheiro: 0, pix: 0, debito: 0, credito: 0, app: 0 }
   let faturamento = 0
   let descontos = 0
   let taxas = 0
@@ -561,7 +582,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     ticketMedio: pedidos.length ? faturamento / pedidos.length : 0,
     trocoInicial: caixa.trocoInicial,
     dinheiroEsperado: caixa.trocoInicial + porForma.dinheiro + suprimentos - sangrias - despesasDinheiro,
-    emConta: porForma.pix + porForma.debito + porForma.credito - taxas - despesasConta,
+    emConta: porForma.pix + porForma.debito + porForma.credito + porForma.app - taxas - despesasConta,
     porProduto: [...linhas.values()].map((l) => ({ ...l, vendidos: Math.round(l.vendidos * 100) / 100, emCombos: Math.round(l.emCombos * 100) / 100 })).sort(
       (a, b) => ordemCat[a.categoria] - ordemCat[b.categoria] || ordemProd(a.produtoId) - ordemProd(b.produtoId),
     ),

@@ -129,7 +129,7 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
           <h2 className="mb-3 text-lg font-extrabold">Por forma de pagamento</h2>
           <ul className="space-y-2">
-            {(Object.keys(r.porForma) as (keyof typeof r.porForma)[]).map((f) => (
+            {(Object.keys(r.porForma) as (keyof typeof r.porForma)[]).filter((f) => f !== 'app' || r.porForma.app > 0).map((f) => (
               <li key={f} className="flex justify-between border-b border-stone-100 pb-1">
                 <span>{NOMES_FORMA[f]}</span>
                 <b>{brl(r.porForma[f])}</b>

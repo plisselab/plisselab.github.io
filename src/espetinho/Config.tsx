@@ -172,6 +172,22 @@ export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; p
       </section>
 
       <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
+        <h2 className="text-lg font-extrabold">🛵 iFood e 99Food</h2>
+        <p className="text-sm text-stone-600">
+          Comissão total cobrada pelo app (plano + pagamento online) — sai do lucro dos pedidos marcados como iFood/99Food. O acréscimo deixa o preço no app mais alto
+          que no balcão para cobrir a comissão (o cardápio e a venda usam esse preço).
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-3">
+          <CampoNumero rotulo="Comissão iFood" sufixo="%" valor={config.taxaIfood} aoMudar={(v) => set({ taxaIfood: v })} />
+          <CampoNumero rotulo="Comissão 99Food" sufixo="%" valor={config.taxa99} aoMudar={(v) => set({ taxa99: v })} />
+          <CampoNumero rotulo="Acréscimo no app" sufixo="%" valor={config.acrescimoDelivery} aoMudar={(v) => set({ acrescimoDelivery: v })} />
+        </div>
+        <p className="mt-2 text-xs text-stone-500">
+          Para não perder dinheiro, o acréscimo precisa ser de pelo menos {Math.ceil((100 / (1 - Math.max(config.taxaIfood, config.taxa99) / 100) - 100) * 10) / 10}% (cobre a maior comissão).
+        </p>
+      </section>
+
+      <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
         <h2 className="text-lg font-extrabold">Observações rápidas</h2>
         <p className="text-sm text-stone-600">Botões que aparecem ao tocar em “+ observação” num item do pedido.</p>
         <div className="mt-3 flex flex-wrap gap-2">

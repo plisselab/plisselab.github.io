@@ -74,9 +74,22 @@ export interface Produto {
   codigos?: string[]
   /** Quantas unidades vêm na caixa/fardo do fornecedor (para sugerir a compra em caixas). */
   unidadesCaixa?: number
+  /** Cardápio: descrição curta (ex.: "Cerveja puro malte, lata gelada"). */
+  descricao?: string
+  /** Cardápio: seção onde aparece (vazio = automático: Cervejas, Destilados, Espetos…). */
+  secao?: string
+  /** Cardápio: tamanho/porção (ex.: "350 ml", "1 kg", "serve 2 pessoas"). */
+  tamanho?: string
+  /** Preço no iFood/99Food. Sem valor = preço de venda + acréscimo do delivery (Configurações). */
+  precoDelivery?: number
+  /** Não aparece no cardápio de delivery (ex.: carvão, gelo, se não quiser vender pelo app). */
+  foraDoDelivery?: boolean
 }
 
-export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito'
+export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito' | 'app'
+
+/** Onde o pedido foi feito: no balcão ou num app de delivery. */
+export type Canal = 'balcao' | 'ifood' | '99food'
 
 export interface Pagamento {
   forma: FormaPagamento
@@ -133,6 +146,8 @@ export interface Pedido {
   /** Conta dividida: qual divisão e qual parte (ex.: "2/3"). */
   divisaoId?: string
   parte?: string
+  /** Pedido que veio do iFood/99Food (a comissão do app entra em `taxas`). */
+  canal?: Canal
   cancelado: boolean
   entregue: boolean
 }
@@ -195,6 +210,12 @@ export interface Config {
   espetoHoje: boolean
   /** Reposição: comprar para durar quantos dias. */
   diasCobertura: number
+  /** Comissão total do iFood (plano + pagamento online), em %. */
+  taxaIfood: number
+  /** Comissão total do 99Food, em %. */
+  taxa99: number
+  /** Quanto o preço do app fica acima do balcão, em % (para cobrir a comissão). */
+  acrescimoDelivery: number
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'

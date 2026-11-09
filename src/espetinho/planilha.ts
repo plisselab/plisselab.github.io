@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { aparelho, aparelhoVazio, silenciado, silenciarMudanca } from './sincronia'
-import { NOMES_CATEGORIA, NOMES_FORMA, aplicarBackup, custoUnitarioInsumo, montarBackup, resumirCaixa, type Dados } from './dados'
+import { NOMES_CANAL, NOMES_CATEGORIA, NOMES_FORMA, aplicarBackup, custoUnitarioInsumo, montarBackup, resumirCaixa, type Dados } from './dados'
 
 /**
  * Sincronização com uma planilha do Google, via Apps Script implantado como app da Web.
@@ -52,14 +52,14 @@ export function montarTabelas(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' 
   const caixas: Tabela = {
     nome: 'Caixas',
     cabecalho: [
-      'Caixa Nº', 'Abertura', 'Fechamento', 'Pedidos', 'Espetos vendidos', 'Faturamento', 'Dinheiro', 'Pix', 'Débito', 'Crédito',
+      'Caixa Nº', 'Abertura', 'Fechamento', 'Pedidos', 'Espetos vendidos', 'Faturamento', 'Dinheiro', 'Pix', 'Débito', 'Crédito', 'Apps delivery',
       'Taxas maquininha', 'Custo dos produtos', 'Despesas', 'Lucro', 'Dinheiro esperado', 'Dinheiro contado', 'Diferença', 'Em conta', 'Observação',
     ],
     linhas: caixasOrd.map((c) => {
       const r = resumirCaixa(c, d.pedidos, d.produtos, d.movEstoque)
       return [
         c.numero, dh(c.abertoEm), c.fechadoEm ? dh(c.fechadoEm) : 'ABERTO', r.qtdPedidos, r.espetosVendidos, r2(r.faturamento),
-        r2(r.porForma.dinheiro), r2(r.porForma.pix), r2(r.porForma.debito), r2(r.porForma.credito), r2(r.taxas), r2(r.cmv), r2(r.despesas),
+        r2(r.porForma.dinheiro), r2(r.porForma.pix), r2(r.porForma.debito), r2(r.porForma.credito), r2(r.porForma.app), r2(r.taxas), r2(r.cmv), r2(r.despesas),
         r2(r.lucroLiquido), r2(r.dinheiroEsperado), c.dinheiroContado ?? '', c.dinheiroContado !== undefined ? r2(c.dinheiroContado - r.dinheiroEsperado) : '',
         r2(r.emConta), txt(c.observacao ?? ''),
       ]
@@ -70,7 +70,7 @@ export function montarTabelas(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' 
     nome: 'Pedidos',
     cabecalho: ['Data', 'Caixa Nº', 'Pedido Nº', 'Cliente', 'Para viagem', 'Itens', 'Subtotal', 'Desconto', 'Total', 'Pagamento', 'Troco', 'Custo', 'Lucro bruto', 'Situação'],
     linhas: d.pedidos.map((p) => [
-      dh(p.criadoEm), numCaixa.get(p.caixaId) ?? '', p.numero, txt(p.cliente), p.viagem ? 'Sim' : 'Não',
+      dh(p.criadoEm), numCaixa.get(p.caixaId) ?? '', p.numero, txt(p.cliente), p.canal && p.canal !== 'balcao' ? NOMES_CANAL[p.canal] : p.viagem ? 'Sim' : 'Não',
       txt(p.itens.map((i) => `${i.qtd}x ${i.nome}${i.escolhas?.length ? ` (${i.escolhas.map((e) => `${e.qtd * i.qtd} ${e.nome}`).join(', ')})` : ''}`).join('; ')),
       r2(p.subtotal), r2(p.desconto), r2(p.total), p.pagamentos.map((pg) => `${NOMES_FORMA[pg.forma]} ${pg.valor.toFixed(2)}`).join(' + '),
       r2(p.troco), r2(p.custoTotal), r2(p.total - p.custoTotal - p.taxas), p.cancelado ? 'Cancelado' : p.entregue ? 'Entregue' : 'Aberto',

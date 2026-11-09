@@ -46,7 +46,7 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
               inclui {e.qtd} {e.nome.toLowerCase()} = {brl(e.custo)}
             </p>
           ))}
-          <Linha rotulo="− Taxas da maquininha" valor={brl(r.taxas)} neg />
+          <Linha rotulo="− Taxas (maquininha e apps)" valor={brl(r.taxas)} neg />
           <Linha rotulo="− Despesas do dia" valor={brl(r.despesas)} neg />
           <Linha rotulo="= Lucro" valor={brl(r.lucroLiquido)} forte />
           {r.descontos > 0 && <p className="mt-2 text-sm text-stone-500">Descontos dados: {brl(r.descontos)}</p>}
@@ -77,7 +77,8 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
           <Linha rotulo="Pix" valor={brl(r.porForma.pix)} />
           <Linha rotulo="Débito" valor={brl(r.porForma.debito)} />
           <Linha rotulo="Crédito" valor={brl(r.porForma.credito)} />
-          <Linha rotulo="− Taxas da maquininha" valor={brl(r.taxas)} neg />
+          {r.porForma.app > 0 && <Linha rotulo="iFood / 99Food (repasse do app)" valor={brl(r.porForma.app)} />}
+          <Linha rotulo="− Taxas da maquininha e dos apps" valor={brl(r.taxas)} neg />
           {r.despesasConta > 0 && <Linha rotulo="− Despesas pagas da conta" valor={brl(r.despesasConta)} neg />}
           <Linha rotulo="= Em conta" valor={brl(r.emConta)} forte />
         </section>
