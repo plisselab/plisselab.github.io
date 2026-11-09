@@ -355,7 +355,7 @@ export function imprimirContaCompleta(c: Comanda, pagos: Pedido[], config: Confi
       ${pagos
         .map(
           (p) =>
-            `<tr class="linha"><td>${hora(p.criadoEm)} ${p.parte ? `Pessoa ${p.parte}` : 'Pagamento'}<br><span class="peq">${p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}${p.desconto > 0 ? ` · desc. ${brl(p.desconto)}` : ''}${p.troco > 0 ? ` · troco ${brl(p.troco)}` : ''}</span></td><td class="r">${brl(p.total)}</td></tr>`,
+            `<tr class="linha"><td>${hora(p.criadoEm)} ${p.cortesia ? `Cortesia (${esc(p.cortesia.motivo)})` : p.parte ? `Pessoa ${p.parte}` : 'Pagamento'}<br><span class="peq">${p.cortesia ? `valor ${brl(p.cortesia.valor)}` : p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}${p.desconto > 0 ? ` · desc. ${brl(p.desconto)}` : ''}${p.troco > 0 ? ` · troco ${brl(p.troco)}` : ''}</span></td><td class="r">${brl(p.total)}</td></tr>`,
         )
         .join('')}
       ${descontos > 0 ? `<tr class="linha"><td>Descontos</td><td class="r">-${brl(descontos)}</td></tr>` : ''}

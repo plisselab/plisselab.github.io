@@ -1060,7 +1060,7 @@ function ModalVincularCodigo({
 const MOTIVOS_CORTESIA = ['Consumo próprio', 'Cortesia para cliente', 'Funcionário', 'Degustação']
 
 /** Saída sem venda: escolhe o motivo; mostra quanto valeria e quanto custa (o custo sai do lucro). */
-function ModalCortesia({ valor, custo, aoFechar, aoConfirmar }: { valor: number; custo: number; aoFechar: () => void; aoConfirmar: (motivo: string) => void }) {
+export function ModalCortesia({ valor, custo, aoFechar, aoConfirmar }: { valor: number; custo: number; aoFechar: () => void; aoConfirmar: (motivo: string) => void }) {
   const [motivo, setMotivo] = useState(MOTIVOS_CORTESIA[0])
   const [outro, setOutro] = useState('')
   const final = motivo === 'outro' ? outro.trim() : motivo
