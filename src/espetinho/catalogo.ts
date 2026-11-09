@@ -52,26 +52,64 @@ export function secaoDe(p: Produto): string {
 
 export type ModoCardapio = 'balcao' | 'delivery'
 
-export interface SecaoCardapio {
+export interface ItemCardapio {
+  id: string
   nome: string
-  itens: { nome: string; emoji: string; preco: number; detalhe: string }[]
+  emoji: string
+  preco: number
+  detalhe: string
+  /** Tirado do cardápio à mão. */
+  oculto: boolean
+  /** Sem estoque agora (fardo: não dá para montar um). */
+  esgotado: boolean
 }
 
-export function montarCardapio(produtos: Produto[], config: Config, modo: ModoCardapio, secoesFora: string[]): SecaoCardapio[] {
+export interface SecaoCardapio {
+  nome: string
+  itens: ItemCardapio[]
+}
+
+/** Sem estoque para vender 1 unidade? (só para produtos que controlam estoque; fardo/combo olha as opções) */
+export function esgotado(p: Produto, produtos: Produto[]): boolean {
+  if (p.componentes?.length) {
+    return p.componentes.some((c) => {
+      const ops = c.opcoes.map((id) => produtos.find((x) => x.id === id)).filter((x): x is Produto => !!x)
+      return ops.length > 0 && ops.every((o) => o.estoque !== undefined && o.estoque < c.qtd)
+    })
+  }
+  return p.estoque !== undefined && p.estoque <= 0
+}
+
+/**
+ * Seções do cardápio. Com `tudo`, inclui os itens tirados/esgotados (para a lista de marcar);
+ * sem, só o que vai aparecer na imagem/texto.
+ */
+export function montarCardapio(
+  produtos: Produto[],
+  config: Config,
+  modo: ModoCardapio,
+  secoesFora: string[],
+  tudo = false,
+): SecaoCardapio[] {
   const mapa = new Map<string, SecaoCardapio>()
   for (const p of produtos) {
     if (!p.ativo || p.preco <= 0) continue
     if (modo === 'delivery' && p.foraDoDelivery) continue
     const nome = secaoDe(p)
     if (secoesFora.includes(nome)) continue
-    let s = mapa.get(nome)
-    if (!s) mapa.set(nome, (s = { nome, itens: [] }))
-    s.itens.push({
+    const item: ItemCardapio = {
+      id: p.id,
       nome: p.nome,
       emoji: p.emoji,
       preco: modo === 'delivery' ? precoDelivery(p, config) : p.preco,
       detalhe: [p.tamanho, p.descricao].filter(Boolean).join(' · '),
-    })
+      oculto: !!p.foraDoCardapio,
+      esgotado: esgotado(p, produtos),
+    }
+    if (!tudo && (item.oculto || (config.cardapioSemEsgotados && item.esgotado))) continue
+    let s = mapa.get(nome)
+    if (!s) mapa.set(nome, (s = { nome, itens: [] }))
+    s.itens.push(item)
   }
   const ordem = (n: string) => {
     const i = (SECOES as readonly string[]).indexOf(n)

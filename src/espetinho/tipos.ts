@@ -84,6 +84,8 @@ export interface Produto {
   precoDelivery?: number
   /** Não aparece no cardápio de delivery (ex.: carvão, gelo, se não quiser vender pelo app). */
   foraDoDelivery?: boolean
+  /** Tirado do cardápio por enquanto (ex.: acabou a Skol). Continua na venda. */
+  foraDoCardapio?: boolean
 }
 
 export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito' | 'app'
@@ -216,6 +218,8 @@ export interface Config {
   taxa99: number
   /** Quanto o preço do app fica acima do balcão, em % (para cobrir a comissão). */
   acrescimoDelivery: number
+  /** Cardápio: esconder sozinho o que está sem estoque. */
+  cardapioSemEsgotados?: boolean
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'
