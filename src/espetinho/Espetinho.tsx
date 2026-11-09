@@ -202,6 +202,35 @@ export default function Espetinho() {
       )}
 
       <div className="min-w-0 flex-1">
+      {pasta.remotoNovo && (
+        <div className="bg-sky-600 text-white">
+          <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
+            <span className="flex-1 font-semibold">
+              ⚠ A pasta do Drive tem dados mais novos, salvos em {new Date(pasta.remotoNovo.geradoEm).toLocaleString('pt-BR')} por outro computador, e este tem
+              mudanças ainda não gravadas. Qual vale?
+            </span>
+            <button className="rounded-lg bg-white px-3 py-1.5 font-bold text-sky-800" onClick={() => void pasta.usarRemoto()}>
+              Usar os da pasta
+            </button>
+            <button
+              className="rounded-lg px-3 py-1.5 font-semibold text-white underline"
+              onClick={() => confirm('Manter os dados DESTE computador e gravar por cima da pasta?') && void pasta.manterLocal()}
+            >
+              Manter os deste computador
+            </button>
+          </div>
+        </div>
+      )}
+      {(planilha.atualizadoAuto || pasta.atualizadoAuto) && (
+        <AvisoAtualizado
+          em={(planilha.atualizadoAuto ?? pasta.atualizadoAuto)!}
+          origem={planilha.atualizadoAuto ? 'planilha' : 'pasta do Drive'}
+          aoFechar={() => {
+            planilha.fecharAviso()
+            pasta.fecharAviso()
+          }}
+        />
+      )}
       {pasta.estado.tipo === 'precisaPermissao' && (
         <div className="bg-amber-500 text-stone-950">
           <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
@@ -216,7 +245,8 @@ export default function Espetinho() {
         <div className="bg-sky-600 text-white">
           <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
             <span className="flex-1 font-semibold">
-              A planilha tem dados mais novos, salvos em {new Date(planilha.remotoMaisNovo.atualizadoEm).toLocaleString('pt-BR')} por outro aparelho.
+              ⚠ A planilha tem dados mais novos, salvos em {new Date(planilha.remotoMaisNovo.atualizadoEm).toLocaleString('pt-BR')} por outro aparelho, e este
+              computador tem mudanças que ainda não foram enviadas. Qual vale?
             </span>
             <button
               className="rounded-lg bg-white px-3 py-1.5 font-bold text-sky-800 disabled:opacity-60"
@@ -254,6 +284,29 @@ export default function Espetinho() {
         {aba === 'config' && <ConfigTela dados={dados} planilha={planilha} pasta={pasta} />}
       </main>
       </div>
+    </div>
+  )
+}
+
+/** Aviso discreto de que os dados foram atualizados sozinhos com os de outro aparelho. */
+function AvisoAtualizado({ em, origem, aoFechar }: { em: string; origem: string; aoFechar: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(aoFechar, 8000)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [em])
+  return (
+    <div className="fixed right-4 top-4 z-50 flex max-w-sm items-start gap-3 rounded-2xl bg-sky-700 p-4 text-white shadow-2xl">
+      <span className="text-2xl">🔄</span>
+      <div className="flex-1 text-sm">
+        <div className="font-extrabold">Dados atualizados</div>
+        <div>
+          Chegaram as mudanças feitas em outro aparelho ({origem}, {new Date(em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}).
+        </div>
+      </div>
+      <button className="text-xl leading-none" onClick={aoFechar} aria-label="Fechar">
+        ×
+      </button>
     </div>
   )
 }
