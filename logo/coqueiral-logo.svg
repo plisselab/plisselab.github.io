@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <clipPath id="scene"><circle cx="400" cy="320" r="205"/></clipPath>
+  </defs>
+  <!-- selo -->
+  <circle cx="400" cy="400" r="385" fill="#F6E7C8" stroke="#3B2416" stroke-width="14"/>
+  <circle cx="400" cy="400" r="360" fill="none" stroke="#3B2416" stroke-width="3" stroke-dasharray="2 10" stroke-linecap="round"/>
+
+  <!-- cena -->
+  <g clip-path="url(#scene)">
+    <rect x="150" y="100" width="500" height="450" fill="#FBD38D"/>
+    <circle cx="400" cy="370" r="115" fill="#F07A2A"/>
+    <circle cx="400" cy="370" r="85" fill="#F49B3A"/>
+    <path d="M150 385 Q190 365 230 385 T310 385 T390 385 T470 385 T550 385 T630 385 T710 385 V560 H150 Z" fill="#1F7A8C"/>
+    <path d="M150 415 Q190 398 230 415 T310 415 T390 415 T470 415 T550 415 T630 415 T710 415 V560 H150 Z" fill="#2FA4B5"/>
+    <path d="M150 450 Q300 425 450 445 T700 440 V560 H150 Z" fill="#E8C27A"/>
+    <!-- coqueiro -->
+    <path d="M492 530 C488 430 470 330 432 250 L446 246 C486 330 506 430 512 530 Z" fill="#5A3A22"/>
+    <g stroke="#3B2416" stroke-width="3" stroke-linecap="round">
+      <line x1="440" y1="275" x2="458" y2="270"/><line x1="452" y1="305" x2="470" y2="300"/>
+      <line x1="463" y1="335" x2="481" y2="331"/><line x1="472" y1="365" x2="490" y2="362"/>
+      <line x1="480" y1="395" x2="498" y2="393"/><line x1="486" y1="425" x2="504" y2="423"/>
+      <line x1="490" y1="455" x2="508" y2="454"/><line x1="492" y1="485" x2="510" y2="485"/>
+    </g>
+    <g fill="#2E6B3A">
+      <path d="M438 248 Q370 180 285 215 Q370 200 432 258 Z"/>
+      <path d="M438 248 Q350 230 300 300 Q365 245 434 258 Z"/>
+      <path d="M440 246 Q440 160 380 125 Q425 175 432 250 Z"/>
+      <path d="M440 246 Q500 170 580 185 Q505 190 446 256 Z"/>
+      <path d="M440 248 Q530 230 575 295 Q520 250 444 258 Z"/>
+    </g>
+    <g fill="#3E8A4B">
+      <path d="M438 250 Q395 205 340 210 Q395 220 434 256 Z"/>
+      <path d="M442 250 Q490 205 540 215 Q490 225 446 256 Z"/>
+    </g>
+    <circle cx="430" cy="262" r="10" fill="#6B4226"/>
+    <circle cx="448" cy="264" r="10" fill="#6B4226"/>
+    <circle cx="439" cy="276" r="9" fill="#6B4226"/>
+    <!-- jangada -->
+    <path d="M250 398 L300 398 L294 406 L256 406 Z" fill="#3B2416"/>
+    <path d="M275 398 L275 340 L300 392 Z" fill="#F6E7C8" stroke="#3B2416" stroke-width="2"/>
+  </g>
+  <circle cx="400" cy="320" r="205" fill="none" stroke="#3B2416" stroke-width="8"/>
+
+  <!-- faixa -->
+  <polygon points="95,525 175,525 175,615 95,615 125,570" fill="#7E2F1D"/>
+  <polygon points="705,525 625,525 625,615 705,615 675,570" fill="#7E2F1D"/>
+  <polygon points="140,600 175,615 175,600" fill="#4E1C10"/>
+  <polygon points="660,600 625,615 625,600" fill="#4E1C10"/>
+  <rect x="140" y="505" width="520" height="95" rx="4" fill="#B5462B" stroke="#3B2416" stroke-width="4"/>
+  <text x="400" y="575" text-anchor="middle" font-family="Caladea, 'DejaVu Serif', Georgia, serif" font-weight="700" font-size="70" letter-spacing="6" fill="#F6E7C8">COQUEIRAL</text>
+
+  <!-- subtítulo -->
+  <text x="400" y="675" text-anchor="middle" font-family="Caladea, 'DejaVu Serif', Georgia, serif" font-weight="700" font-size="34" letter-spacing="5" fill="#3B2416">ADEGA &amp; ESPETO</text>
+  <!-- espetos -->
+  <g transform="translate(175 664) rotate(-20)">
+    <line x1="-30" y1="0" x2="40" y2="0" stroke="#3B2416" stroke-width="3" stroke-linecap="round"/>
+    <rect x="-18" y="-8" width="14" height="16" rx="4" fill="#B5462B"/>
+    <rect x="0" y="-8" width="14" height="16" rx="4" fill="#5A3A22"/>
+    <rect x="18" y="-8" width="14" height="16" rx="4" fill="#B5462B"/>
+  </g>
+  <g transform="translate(625 664) rotate(20) scale(-1 1)">
+    <line x1="-30" y1="0" x2="40" y2="0" stroke="#3B2416" stroke-width="3" stroke-linecap="round"/>
+    <rect x="-18" y="-8" width="14" height="16" rx="4" fill="#B5462B"/>
+    <rect x="0" y="-8" width="14" height="16" rx="4" fill="#5A3A22"/>
+    <rect x="18" y="-8" width="14" height="16" rx="4" fill="#B5462B"/>
+  </g>
+  <!-- estrelas estilo cordel -->
+  <g fill="#B5462B">
+    <path d="M400 712 l5 10 11 1 -8 7 3 11 -11 -6 -11 6 3 -11 -8 -7 11 -1 z"/>
+    <path d="M360 718 l3 6 7 1 -5 4 2 7 -7 -4 -7 4 2 -7 -5 -4 7 -1 z"/>
+    <path d="M440 718 l3 6 7 1 -5 4 2 7 -7 -4 -7 4 2 -7 -5 -4 7 -1 z"/>
+  </g>
+</svg>
