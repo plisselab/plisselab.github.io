@@ -261,6 +261,8 @@ export default function ConfigTela({ dados, planilha, pasta }: { dados: Dados; p
           />
         </div>
       </section>
+
+      <ZerarMovimento dados={dados} baixarBackup={exportar} />
     </div>
   )
 }
@@ -678,6 +680,88 @@ function SecaoIA() {
         </div>
       )}
       {estado && <p className="mt-2 text-sm font-semibold">{estado}</p>}
+    </section>
+  )
+}
+
+/** Apaga vendas, caixas, comandas, compras e o histórico de estoque (ex.: depois dos testes), mantendo os cadastros. */
+function ZerarMovimento({ dados, baixarBackup }: { dados: Dados; baixarBackup: () => void }) {
+  const [aberto, setAberto] = useState(false)
+  const [vendas, setVendas] = useState(true)
+  const [comandas, setComandas] = useState(true)
+  const [compras, setCompras] = useState(true)
+  const [estoque, setEstoque] = useState(true)
+  const [texto, setTexto] = useState('')
+  const [feito, setFeito] = useState('')
+  const abertas = dados.comandas.filter((c) => !c.canceladaEm && !c.juntadaNa).length
+  const compraMovs = dados.movEstoque.length
+
+  function zerar() {
+    baixarBackup() // cópia de segurança antes de apagar
+    if (vendas) {
+      dados.setPedidos([])
+      dados.setCaixas([])
+    }
+    if (comandas) dados.setComandas([])
+    if (compras) {
+      dados.setMovEstoque([])
+      try {
+        localStorage.removeItem('espeto:compra-rascunho')
+      } catch {
+        // sem localStorage: nada a apagar
+      }
+    }
+    if (estoque) {
+      dados.setProdutos((ps) => ps.map((p) => (p.estoque !== undefined ? { ...p, estoque: 0 } : p)))
+      dados.setInsumos((is) => is.map((i) => (i.estoque !== undefined ? { ...i, estoque: 0 } : i)))
+    }
+    setFeito('Pronto! Movimento zerado. Um backup de antes foi baixado, por segurança. Abra o caixa para começar de verdade.')
+    setAberto(false)
+    setTexto('')
+  }
+
+  return (
+    <section className="rounded-2xl border-2 border-red-200 bg-white p-4">
+      <h2 className="text-lg font-extrabold">🧹 Zerar movimento (começar de verdade)</h2>
+      <p className="text-sm text-stone-600">
+        Apaga os testes: vendas, caixas, comandas, compras e o estoque. <b>Produtos, insumos, preços, fotos, códigos de barras e configurações continuam.</b>
+      </p>
+      {feito && <p className="mt-2 rounded-xl bg-emerald-50 p-3 font-semibold text-emerald-800">✔ {feito}</p>}
+      <button className={`${btn.secundario} mt-3 !border-red-300 !text-red-700`} onClick={() => setAberto(true)}>
+        🧹 Zerar movimento…
+      </button>
+      {aberto && (
+        <Modal titulo="🧹 Zerar movimento" aberto aoFechar={() => setAberto(false)}>
+          <p className="text-sm text-stone-600">Marque o que apagar:</p>
+          <div className="mt-2 space-y-2">
+            {(
+              [
+                [vendas, setVendas, `Vendas e caixas (${dados.pedidos.length} vendas, ${dados.caixas.length} caixas)`],
+                [comandas, setComandas, `Comandas (${dados.comandas.length}${abertas ? `, ${abertas} abertas` : ''})`],
+                [compras, setCompras, `Compras e histórico de estoque (${compraMovs} registros)`],
+                [estoque, setEstoque, 'Quantidades em estoque → 0 (produtos e insumos)'],
+              ] as const
+            ).map(([v, setV, rotulo]) => (
+              <label key={rotulo} className="flex items-center gap-2 rounded-xl border-2 border-stone-200 p-3 font-semibold">
+                <input type="checkbox" className="h-5 w-5 accent-red-600" checked={v} onChange={(e) => setV(e.target.checked)} />
+                {rotulo}
+              </label>
+            ))}
+          </div>
+          <p className="mt-3 text-xs text-stone-500">
+            Custos e preços que mudaram nos testes ficam como estão — confira em Cadastros. Se o celular ou outro computador estiver conectado (pasta/planilha), ele
+            também recebe o zerado.
+          </p>
+          <CampoTexto className="mt-3" rotulo='Para confirmar, escreva ZERAR' valor={texto} aoMudar={setTexto} placeholder="ZERAR" />
+          <button
+            className={`${btn.primario} mt-3 w-full !bg-red-600 hover:!bg-red-700`}
+            disabled={texto.trim().toUpperCase() !== 'ZERAR' || !(vendas || comandas || compras || estoque)}
+            onClick={zerar}
+          >
+            Baixar backup e zerar
+          </button>
+        </Modal>
+      )}
     </section>
   )
 }

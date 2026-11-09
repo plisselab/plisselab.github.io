@@ -39,6 +39,8 @@ Código em `src/espetinho/`. Tudo fica salvo no navegador do aparelho (use **Con
 
 **Lucro** = faturamento − custo dos insumos dos itens vendidos − taxas da maquininha − despesas do dia.
 
+- **🧹 Zerar movimento** (Configurações): depois dos testes, apaga vendas, caixas, comandas, compras/histórico de estoque e zera as quantidades em estoque, mantendo produtos, insumos, preços e configurações. Pede para escrever ZERAR e baixa um backup antes.
+
 ### Impressora térmica (Waytech)
 
 1. Instale o driver no Windows e deixe a Waytech como impressora padrão, com papel 80 mm e **corte automático ao fim de cada página**. Cada via é enviada como uma página do tamanho exato do conteúdo, então cada via sai cortada separada.
