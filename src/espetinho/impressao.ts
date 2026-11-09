@@ -185,7 +185,10 @@ function imprimirHTML(corpo: string, config: Config) {
 }
 
 export function imprimirPedido(p: Pedido, config: Config, vias?: { churrasqueira: boolean; cliente: boolean }) {
-  const v = vias ?? { churrasqueira: config.viaChurrasqueira, cliente: config.viaCliente }
+  // via de preparo só quando tem algo para preparar (espeto, combo, dose/drink, acompanhamento);
+  // venda só de bebida pronta (lata, garrafa, fardo) sai só com o cupom do cliente
+  const temPreparo = p.itens.some((i) => i.categoria !== 'bebida')
+  const v = vias ?? { churrasqueira: config.viaChurrasqueira && temPreparo, cliente: config.viaCliente }
   const partes: string[] = []
   if (v.churrasqueira) partes.push(viaChurrasqueira(p))
   if (v.cliente) partes.push(viaCliente(p, config))
@@ -369,4 +372,14 @@ export function imprimirContaCompleta(c: Comanda, pagos: Pedido[], config: Confi
 export function imprimirCupons(pedidos: Pedido[], config: Config) {
   if (!pedidos.length) return
   imprimirHTML(pedidos.map((p) => viaCliente(p, config)).join(''), config)
+}
+
+/** Lista de compra (Reposição) na térmica. */
+export function imprimirListaCompra(texto: string, config: Config) {
+  const linhas = texto
+    .replace(/\*/g, '')
+    .split('\n')
+    .map((l) => (l.trim() ? `<div class="${l.startsWith('- ') ? 'linha' : 'grande'}">${esc(l)}</div>` : '<hr>'))
+    .join('')
+  imprimirHTML(`<div class="via"><div class="tag">LISTA DE COMPRA</div>${linhas}</div>`, config)
 }

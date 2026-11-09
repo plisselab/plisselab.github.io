@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CATEGORIAS,
+  acharPorCodigo,
+  buscarProdutos,
+  limparCodigo,
   EMOJI_FORMA,
   FORMAS,
   NOMES_CATEGORIA,
@@ -23,6 +26,7 @@ import {
 import { imprimirPedido } from './impressao'
 import type { Categoria, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
 import { CampoNumero, Imagem, Modal, btn } from './ui'
+import { LerComCamera, cameraLeSuportada, useLeitorCodigo } from './leitor'
 
 interface Linha {
   id: string
@@ -44,11 +48,17 @@ export interface ModoComanda {
 }
 
 export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara: (aba: 'caixa') => void; comanda?: ModoComanda }) {
-  const { produtos, setProdutos, insumos, setInsumos, pedidos, setPedidos, caixaAberto, config } = dados
+  const { produtos, setProdutos, insumos, setInsumos, pedidos, setPedidos, caixaAberto, config, setConfig } = dados
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [cliente, setCliente] = useState('')
   const [viagem, setViagem] = useState(false)
   const [filtro, setFiltro] = useState<Filtro>('todos')
+  const [busca, setBusca] = useState('')
+  const [codigoNovo, setCodigoNovo] = useState<string | null>(null)
+  const [camera, setCamera] = useState(false)
+  // leitor de código de barras: bipou sem clicar em nada, entra no pedido
+  useLeitorCodigo(true, (c) => lerCodigoRef.current(c))
+  const lerCodigoRef = useRef<(c: string) => void>(() => {})
   const [pagando, setPagando] = useState(false)
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
@@ -62,8 +72,9 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     return () => clearTimeout(t)
   }, [ultimo])
 
-  const ativos = produtos.filter((p) => p.ativo)
-  const visiveis = filtro === 'todos' ? ativos : ativos.filter((p) => p.categoria === filtro)
+  // dia sem espeto (só adega): espetos e combos/jantinhas somem da venda
+  const ativos = produtos.filter((p) => p.ativo && (config.espetoHoje || (p.categoria !== 'espeto' && p.categoria !== 'combo')))
+  const visiveis = busca.trim() ? buscarProdutos(ativos, busca) : filtro === 'todos' ? ativos : ativos.filter((p) => p.categoria === filtro)
   const categorias = CATEGORIAS.filter((c) => ativos.some((p) => p.categoria === c))
 
   const consumoCarrinho = useMemo(() => consumoDosItens(linhas), [linhas])
@@ -100,6 +111,16 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     })
   const restanteBotao = (p: Produto) => {
     if (p.componentes?.length && !comboDisponivel(p)) return 0
+    // fardo/caixa (componentes de opção única): quantos fardos ainda dá com as unidades em estoque
+    if (p.componentes?.length && p.componentes.every((c) => c.opcoes.length === 1)) {
+      const fardos = p.componentes
+        .map((c) => {
+          const r = restante(c.opcoes[0])
+          return r === undefined ? undefined : Math.floor(Math.max(0, r) / c.qtd)
+        })
+        .filter((v): v is number => v !== undefined)
+      if (fardos.length) return Math.min(...fardos)
+    }
     const valores = [restante(p.id), limiteInsumos(p)].filter((v): v is number => v !== undefined)
     return valores.length ? Math.min(...valores) : undefined
   }
@@ -138,6 +159,27 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
       return [...ls, { id: novoId(), produtoId: p.id, qtd: 1, obs: '', escolhas }]
     })
   }
+
+  /** Código bipado (leitor, câmera ou digitado): acha o produto e põe no pedido. */
+  function lerCodigo(codigo: string) {
+    const p = acharPorCodigo(produtos, codigo)
+    if (!p) {
+      setCodigoNovo(limparCodigo(codigo))
+      return
+    }
+    if (!p.ativo) {
+      alert(`${p.nome} está desativado em Cadastros.`)
+      return
+    }
+    const r = restanteBotao(p)
+    if (r !== undefined && r <= 0) {
+      alert(`${p.nome}: sem estoque.`)
+      return
+    }
+    adicionar(p)
+  }
+
+  lerCodigoRef.current = lerCodigo
 
   function mudarQtd(id: string, delta: number) {
     const linha = linhas.find((l) => l.id === id)
@@ -259,6 +301,39 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     <div className="flex flex-col gap-4 pb-24 lg:flex-row lg:items-start lg:pb-0">
       {/* Botões de produtos */}
       <section className="min-w-0 flex-1">
+        <div className="mb-3 flex gap-2">
+          <input
+            className="min-w-0 flex-1 rounded-xl border-2 border-stone-200 bg-white px-4 py-3 text-lg outline-none focus:border-orange-500"
+            placeholder="🔎 Bipe o código ou digite o nome…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setBusca('')
+              if (e.key !== 'Enter' || !busca.trim()) return
+              e.preventDefault()
+              const porCodigo = acharPorCodigo(produtos, busca)
+              if (porCodigo) lerCodigo(busca)
+              else if (visiveis.length === 1) adicionar(visiveis[0])
+              else if (/^\d{6,}$/.test(busca.trim())) setCodigoNovo(limparCodigo(busca))
+              else return
+              setBusca('')
+            }}
+          />
+          {cameraLeSuportada() && (
+            <button className="rounded-xl bg-white px-4 text-2xl ring-2 ring-stone-200" onClick={() => setCamera(true)} title="Ler código pela câmera">
+              📷
+            </button>
+          )}
+          {!comanda && (
+            <button
+              onClick={() => setConfig((c) => ({ ...c, espetoHoje: !c.espetoHoje }))}
+              className={`shrink-0 rounded-xl px-3 text-sm font-bold ${config.espetoHoje ? 'bg-orange-600 text-white' : 'bg-white text-stone-500 ring-2 ring-stone-200'}`}
+              title="Nos dias sem espeto, os espetos e combos somem da venda e não sai cupom da churrasqueira"
+            >
+              🔥 Espeto hoje: {config.espetoHoje ? 'SIM' : 'NÃO'}
+            </button>
+          )}
+        </div>
         <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
           {(['todos', ...categorias] as Filtro[]).map((f) => (
             <button
@@ -271,7 +346,9 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
           ))}
         </div>
         {visiveis.length === 0 && (
-          <p className="rounded-xl bg-white p-6 text-center text-stone-500">Nenhum produto ativo. Cadastre em “Cadastros”.</p>
+          <p className="rounded-xl bg-white p-6 text-center text-stone-500">
+            {busca.trim() ? `Nada encontrado para “${busca}”.` : 'Nenhum produto ativo. Cadastre em “Cadastros”.'}
+          </p>
         )}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {visiveis.map((p) => {
@@ -481,6 +558,28 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
             {comanda ? 'Lançar' : 'Finalizar'}
           </button>
         </div>
+      )}
+
+      {camera && (
+        <LerComCamera
+          aoFechar={() => setCamera(false)}
+          aoLer={(c) => {
+            setCamera(false)
+            lerCodigo(c)
+          }}
+        />
+      )}
+      {codigoNovo && (
+        <ModalVincularCodigo
+          codigo={codigoNovo}
+          produtos={produtos.filter((p) => p.ativo)}
+          aoFechar={() => setCodigoNovo(null)}
+          aoVincular={(p) => {
+            setProdutos((ps) => ps.map((x) => (x.id === p.id ? { ...x, codigos: [...(x.codigos ?? []), codigoNovo] } : x)))
+            setCodigoNovo(null)
+            adicionar(p)
+          }}
+        />
       )}
 
       {montandoCombo && (
@@ -768,6 +867,48 @@ function ModalCombo({
       <button className={`${btn.verde} mt-5 w-full py-4 text-lg`} disabled={!completo} onClick={confirmar}>
         Adicionar ao pedido
       </button>
+    </Modal>
+  )
+}
+
+/** Código bipado que ainda não está em nenhum produto: escolhe a qual produto ele pertence (fica gravado). */
+function ModalVincularCodigo({
+  codigo,
+  produtos,
+  aoFechar,
+  aoVincular,
+}: {
+  codigo: string
+  produtos: Produto[]
+  aoFechar: () => void
+  aoVincular: (p: Produto) => void
+}) {
+  const [termo, setTermo] = useState('')
+  const lista = buscarProdutos(produtos, termo).slice(0, 30)
+  return (
+    <Modal titulo="Código não cadastrado" aberto aoFechar={aoFechar}>
+      <p className="text-sm text-stone-600">
+        O código <b className="font-mono">{codigo}</b> ainda não está em nenhum produto. De qual produto ele é? (Fica gravado: da próxima vez é só bipar.)
+      </p>
+      <input
+        autoFocus
+        className="mt-3 w-full rounded-xl border-2 border-stone-200 px-3 py-2 outline-none focus:border-orange-500"
+        placeholder="Buscar produto…"
+        value={termo}
+        onChange={(e) => setTermo(e.target.value)}
+      />
+      <ul className="mt-2 max-h-72 divide-y divide-stone-100 overflow-y-auto">
+        {lista.map((p) => (
+          <li key={p.id}>
+            <button className="flex w-full items-center gap-2 py-2 text-left hover:bg-stone-50" onClick={() => aoVincular(p)}>
+              <Imagem emoji={p.emoji} imagem={p.imagem} className="h-8 w-8 shrink-0 rounded text-xl" />
+              <span className="flex-1 font-semibold">{p.nome}</span>
+              <span className="text-sm text-stone-500">{brl(p.preco)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-stone-500">Produto novo? Cadastre em Cadastros (dá para bipar o código no campo “Código de barras”).</p>
     </Modal>
   )
 }

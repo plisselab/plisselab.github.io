@@ -4,6 +4,7 @@ import {
   NOMES_CATEGORIA,
   NOMES_UNIDADE,
   arred,
+  buscarProdutos,
   brl,
   custoCompleto,
   custoItemFicha,
@@ -220,6 +221,10 @@ function Produtos({ dados }: { dados: Dados }) {
   const [editando, setEditando] = useState<Produto | null>(null)
   const [novaDose, setNovaDose] = useState(false)
   const [copao, setCopao] = useState(false)
+  const [fardo, setFardo] = useState(false)
+  const [busca, setBusca] = useState('')
+  const listados = new Set(buscarProdutos(produtos, busca).map((p) => p.id))
+  const temAdega = produtos.some((p) => p.id.startsWith('adega-'))
   const temBar = produtos.some((p) => p.id.startsWith('bar-'))
 
   const mover = (idx: number, d: number) =>
@@ -239,8 +244,31 @@ function Produtos({ dados }: { dados: Dados }) {
   return (
     <section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-stone-600">A ordem aqui é a ordem dos botões na tela de venda.</p>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <input
+            className="w-64 max-w-full rounded-xl border-2 border-stone-200 bg-white px-3 py-2"
+            placeholder="🔎 Buscar produto ou código…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+          />
+          <p className="text-sm text-stone-600">A ordem aqui é a ordem dos botões na tela de venda.</p>
+        </div>
         <div className="flex flex-wrap gap-2">
+        {!temAdega && (
+          <button
+            className={btn.secundario}
+            onClick={() => {
+              if (!confirm('Adicionar exemplos de adega? (cervejas, refrigerantes, energético, água, gelo e carvão, com fardos — dá para editar ou excluir depois)'))
+                return
+              adicionarExemplosAdega(dados)
+            }}
+          >
+            🍺 Exemplos de adega
+          </button>
+        )}
+        <button className={btn.secundario} onClick={() => setFardo(true)}>
+          📦 Criar fardo
+        </button>
         {!temBar && (
           <button
             className={btn.secundario}
@@ -270,6 +298,7 @@ function Produtos({ dados }: { dados: Dados }) {
       </div>
       {novaDose && <ModalDose dados={dados} aoFechar={() => setNovaDose(false)} />}
       {copao && <ModalCopao dados={dados} aoFechar={() => setCopao(false)} />}
+      {fardo && <ModalFardo dados={dados} aoFechar={() => setFardo(false)} />}
       <div className="overflow-x-auto rounded-2xl border-2 border-stone-200 bg-white">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
@@ -284,6 +313,7 @@ function Produtos({ dados }: { dados: Dados }) {
           </thead>
           <tbody>
             {produtos.map((p, idx) => {
+              if (!listados.has(p.id)) return null
               const custo = custoCompleto(p, insumos, produtos)
               const lucro = p.preco - custo
               const margem = p.preco > 0 ? (lucro / p.preco) * 100 : 0
@@ -474,6 +504,7 @@ function EditorProduto({
             ))}
           </div>
           <CampoNumero rotulo="Preço de venda" prefixo="R$" grande valor={p.preco} aoMudar={(v) => set({ preco: v })} />
+          <CodigosBarras codigos={p.codigos ?? []} aoMudar={(codigos) => set({ codigos })} />
 
           {p.categoria === 'combo' && (
             <div className="rounded-xl border-2 border-rose-200 bg-rose-50/40 p-3">
@@ -1216,4 +1247,185 @@ function ModalCopao({ dados, aoFechar }: { dados: Dados; aoFechar: () => void })
       </button>
     </Modal>
   )
+}
+
+// ---------------- adega ----------------
+
+/** Códigos de barras do produto: bipe com o leitor no campo (ou digite) e aperte Enter. */
+function CodigosBarras({ codigos, aoMudar }: { codigos: string[]; aoMudar: (c: string[]) => void }) {
+  const [novo, setNovo] = useState('')
+  const add = () => {
+    const c = novo.replace(/\s+/g, '')
+    if (c && !codigos.includes(c)) aoMudar([...codigos, c])
+    setNovo('')
+  }
+  return (
+    <div>
+      <span className="mb-1 block text-sm font-semibold text-stone-600">Código de barras</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {codigos.map((c) => (
+          <span key={c} className="flex items-center gap-1 rounded-full bg-stone-100 py-1 pl-3 pr-1 font-mono text-sm">
+            {c}
+            <button className="rounded-full px-1.5 text-stone-500 hover:text-red-600" onClick={() => aoMudar(codigos.filter((x) => x !== c))}>
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          className="w-48 rounded-xl border-2 border-stone-200 px-3 py-1.5 font-mono text-sm outline-none focus:border-orange-500"
+          placeholder="bipe aqui ou digite + Enter"
+          value={novo}
+          onChange={(e) => setNovo(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              add()
+            }
+          }}
+          onBlur={add}
+        />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Fardo/caixa fechada: um botão com preço próprio que, vendido, tira N unidades do estoque da bebida.
+ * (Usa o mesmo mecanismo dos combos, com uma opção só.)
+ */
+function ModalFardo({ dados, aoFechar }: { dados: Dados; aoFechar: () => void }) {
+  const unidades = dados.produtos.filter((p) => !p.ficha.length && !p.componentes?.length && (p.categoria === 'bebida' || p.categoria === 'outro'))
+  const [base, setBase] = useState(unidades[0]?.id ?? '')
+  const [qtd, setQtd] = useState(12)
+  const [preco, setPreco] = useState(0)
+  const [codigo, setCodigo] = useState('')
+  const p = unidades.find((x) => x.id === base)
+  const custo = p ? p.custoDireto * qtd : 0
+  const avulso = p ? p.preco * qtd : 0
+
+  function salvar() {
+    if (!p) return
+    const novo: Produto = {
+        id: novoId(),
+        nome: `Fardo ${qtd} ${p.nome}`,
+        categoria: 'bebida',
+        preco,
+        emoji: '📦',
+        ficha: [],
+        custoDireto: 0,
+        ativo: true,
+        componentes: [{ id: 'c-unidade', nome: p.nome, qtd, opcoes: [p.id] }],
+        ...(codigo.trim() ? { codigos: [codigo.replace(/\s+/g, '')] } : {}),
+    }
+    // a bebida passa a ter estoque controlado (o fardo tira dela)
+    dados.setProdutos((ps) => [...ps.map((x) => (x.id === p.id && x.estoque === undefined ? { ...x, estoque: 0 } : x)), novo])
+    aoFechar()
+  }
+
+  return (
+    <Modal titulo="📦 Criar fardo / caixa" aberto aoFechar={aoFechar}>
+      {unidades.length === 0 ? (
+        <p>Cadastre primeiro a bebida por unidade (ex.: Heineken lata).</p>
+      ) : (
+        <div className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-sm font-semibold text-stone-600">Bebida (unidade)</span>
+            <select className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2" value={base} onChange={(e) => setBase(e.target.value)}>
+              {unidades.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nome} — {brl(u.preco)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-wrap items-end gap-2">
+            {[6, 8, 12, 15, 18, 24].map((n) => (
+              <button key={n} className={`rounded-full px-3 py-1.5 font-bold ${qtd === n ? 'bg-stone-900 text-white' : 'bg-stone-100'}`} onClick={() => setQtd(n)}>
+                {n} un
+              </button>
+            ))}
+            <CampoNumero className="w-24" sufixo="un" valor={qtd} aoMudar={(v) => setQtd(Math.max(2, Math.round(v)))} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <CampoNumero rotulo="Preço do fardo" prefixo="R$" grande valor={preco} aoMudar={setPreco} />
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-stone-600">Código do fardo (opcional)</span>
+              <input
+                className="w-full rounded-xl border-2 border-stone-200 px-3 py-3 font-mono"
+                placeholder="bipe aqui"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}
+              />
+            </label>
+          </div>
+          {p && (
+            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="rounded-xl bg-stone-100 p-2">
+                <div className="text-xs text-stone-600">Avulso sairia</div>
+                <div className="font-extrabold">{brl(avulso)}</div>
+              </div>
+              <div className="rounded-xl bg-stone-100 p-2">
+                <div className="text-xs text-stone-600">Custo do fardo</div>
+                <div className="font-extrabold">{brl(custo)}</div>
+              </div>
+              <div className={`rounded-xl p-2 ${preco - custo < 0 ? 'bg-red-100' : 'bg-emerald-100'}`}>
+                <div className="text-xs text-stone-600">Lucro do fardo</div>
+                <div className="font-extrabold">
+                  {brl(preco - custo)} {preco > 0 && <span className="text-xs">({pct(((preco - custo) / preco) * 100)})</span>}
+                </div>
+              </div>
+            </div>
+          )}
+          <p className="text-xs text-stone-500">Vendeu 1 fardo → saem {qtd} unidades do estoque de {p?.nome}. O botão mostra quantos fardos ainda dá.</p>
+          <button className={`${btn.primario} w-full`} disabled={!p || preco <= 0} onClick={salvar}>
+            Criar Fardo {qtd} {p?.nome}
+          </button>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+/** Pacote de exemplo para adega: bebidas por unidade (com estoque) e fardos. */
+function adicionarExemplosAdega(dados: Dados) {
+  const b = (id: string, nome: string, emoji: string, preco: number, custo: number, caixa: number): Produto => ({
+    id,
+    nome,
+    categoria: 'bebida',
+    preco,
+    emoji,
+    ficha: [],
+    custoDireto: custo,
+    ativo: true,
+    estoque: 0,
+    unidadesCaixa: caixa,
+  })
+  const fardo = (id: string, base: string, nomeBase: string, qtd: number, preco: number): Produto => ({
+    id,
+    nome: `Fardo ${qtd} ${nomeBase}`,
+    categoria: 'bebida',
+    preco,
+    emoji: '📦',
+    ficha: [],
+    custoDireto: 0,
+    ativo: true,
+    componentes: [{ id: 'c-unidade', nome: nomeBase, qtd, opcoes: [base] }],
+  })
+  const novos: Produto[] = [
+    b('adega-heineken', 'Heineken lata 350 ml', '🍺', 6.5, 4.2, 12),
+    b('adega-brahma', 'Brahma lata 350 ml', '🍺', 4.5, 2.9, 12),
+    b('adega-skol', 'Skol lata 350 ml', '🍺', 4.5, 2.8, 12),
+    b('adega-corona', 'Corona long neck 330 ml', '🍺', 9, 5.9, 24),
+    b('adega-heineken-ln', 'Heineken long neck 330 ml', '🍺', 8, 5.2, 24),
+    b('adega-coca2l', 'Coca-Cola 2 L', '🥤', 14, 9.5, 6),
+    b('adega-guarana2l', 'Guaraná 2 L', '🥤', 10, 6.5, 6),
+    b('adega-redbull', 'Red Bull lata 250 ml', '⚡', 12, 7.5, 24),
+    b('adega-agua', 'Água 500 ml', '💧', 3, 1.2, 12),
+    b('adega-gelo', 'Gelo saco 5 kg', '🧊', 12, 6, 1),
+    b('adega-carvao', 'Carvão 4 kg', '🔥', 25, 16, 1),
+    fardo('adega-f-heineken', 'adega-heineken', 'Heineken lata', 12, 72),
+    fardo('adega-f-brahma', 'adega-brahma', 'Brahma lata', 12, 48),
+    fardo('adega-f-skol', 'adega-skol', 'Skol lata', 12, 48),
+  ]
+  dados.setProdutos((ps) => [...ps, ...novos.filter((n) => !ps.some((p) => p.id === n.id))])
 }
