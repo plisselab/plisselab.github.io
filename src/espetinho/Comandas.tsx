@@ -186,18 +186,20 @@ type Cobranca =
   | { tipo: 'itens'; selecao: Record<string, number> }
   | { tipo: 'parte' }
 
-function DetalheComanda({
+export function DetalheComanda({
   dados,
   comanda: c,
   aoVoltar,
   aoLancar,
   irPara,
+  rotuloVoltar = '← Todas as comandas',
 }: {
   dados: Dados
   comanda: Comanda
   aoVoltar: () => void
   aoLancar: () => void
   irPara: (aba: 'caixa') => void
+  rotuloVoltar?: string
 }) {
   const { pedidos, setPedidos, setComandas, caixaAberto, config, produtos, insumos, setProdutos, setInsumos } = dados
   const [modo, setModo] = useState<'ver' | 'escolher'>('ver')
@@ -286,7 +288,7 @@ function DetalheComanda({
   return (
     <div className="space-y-4">
       <button className="text-sm font-bold text-stone-600 hover:underline" onClick={aoVoltar}>
-        ← Todas as comandas
+        {rotuloVoltar}
       </button>
 
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl bg-stone-900 p-4 text-white">
