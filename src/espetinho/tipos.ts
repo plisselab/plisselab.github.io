@@ -156,6 +156,8 @@ export interface Pedido {
   /** Conta dividida: qual divisão e qual parte (ex.: "2/3"). */
   divisaoId?: string
   parte?: string
+  /** Saída sem venda (consumo próprio, cortesia…): sai do estoque, não entra dinheiro; o custo sai do lucro. */
+  cortesia?: { motivo: string; /** quanto valeria na venda */ valor: number }
   /** Pedido que veio do iFood/99Food (a comissão do app entra em `taxas`). */
   canal?: Canal
   cancelado: boolean

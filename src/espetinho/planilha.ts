@@ -73,7 +73,7 @@ export function montarTabelas(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' 
       dh(p.criadoEm), numCaixa.get(p.caixaId) ?? '', p.numero, txt(p.cliente), p.canal && p.canal !== 'balcao' ? NOMES_CANAL[p.canal] : p.viagem ? 'Sim' : 'Não',
       txt(p.itens.map((i) => `${i.qtd}x ${i.nome}${i.escolhas?.length ? ` (${i.escolhas.map((e) => `${e.qtd * i.qtd} ${e.nome}`).join(', ')})` : ''}`).join('; ')),
       r2(p.subtotal), r2(p.desconto), r2(p.total), p.pagamentos.map((pg) => `${NOMES_FORMA[pg.forma]} ${pg.valor.toFixed(2)}`).join(' + '),
-      r2(p.troco), r2(p.custoTotal), r2(p.total - p.custoTotal - p.taxas), p.cancelado ? 'Cancelado' : p.entregue ? 'Entregue' : 'Aberto',
+      r2(p.troco), r2(p.custoTotal), r2(p.total - p.custoTotal - p.taxas), p.cancelado ? 'Cancelado' : p.cortesia ? `Cortesia: ${p.cortesia.motivo}` : p.entregue ? 'Entregue' : 'Aberto',
     ]),
   }
 

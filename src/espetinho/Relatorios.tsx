@@ -41,6 +41,16 @@ export function RelatorioCaixa({ caixa, r, dados }: { caixa: Caixa; r: Resumo; d
           <h3 className="mb-2 font-extrabold">Lucro</h3>
           <Linha rotulo="Faturamento" valor={brl(r.faturamento)} />
           <Linha rotulo="− Custo dos produtos (insumos)" valor={brl(r.cmv)} neg />
+          {r.cortesias.qtd > 0 && (
+            <div className="-mt-1 pb-1 pl-3 text-xs text-orange-700">
+              inclui 🎁 cortesias/consumo: custo {brl(r.cortesias.custo)} (valeriam {brl(r.cortesias.valor)} vendidos)
+              {r.cortesias.porMotivo.map((m) => (
+                <div key={m.motivo}>
+                  · {m.motivo}: {m.qtd}× — custo {brl(m.custo)}
+                </div>
+              ))}
+            </div>
+          )}
           {r.embalagens.map((e) => (
             <p key={e.nome} className="-mt-1 pb-1 pl-3 text-xs text-stone-500">
               inclui {e.qtd} {e.nome.toLowerCase()} = {brl(e.custo)}

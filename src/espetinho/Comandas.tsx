@@ -15,7 +15,7 @@ import { NOMES_FORMA, arred, brl, consumoDosItens, consumoInsumosDosItens, hora,
 import { imprimirConferencia, imprimirContaCompleta, imprimirCupons, imprimirLancamento, imprimirPedido } from './impressao'
 import type { Comanda, ItemComanda, Pagamento, Pedido } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
-import Venda, { ModalPagamento } from './Venda'
+import Venda, { ModalCortesia, ModalPagamento } from './Venda'
 
 const tempoDesde = (iso: string) => {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
@@ -209,6 +209,7 @@ export function DetalheComanda({
   const [pessoas, setPessoas] = useState(c.divisao?.pessoas ?? 2)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [juntando, setJuntando] = useState(false)
+  const [cortesiaAberta, setCortesiaAberta] = useState(false)
   const outrasAbertas = dados.comandas.filter((x) => x.id !== c.id && statusComanda(x, pedidos) === 'aberta')
 
   /** Mesas que se juntaram: passa todos os itens desta comanda para outra (o estoque não muda). */
@@ -255,6 +256,26 @@ export function DetalheComanda({
     setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(c.itens, produtos, insumos), 1))
     atualizar({ canceladaEm: new Date().toISOString() })
     aoVoltar()
+  }
+
+  /** Itens marcados viram cortesia/consumo próprio: quitados na comanda sem entrar dinheiro (o estoque já saiu ao lançar). */
+  function darCortesia(motivo: string) {
+    if (!caixaAberto) return
+    const alocacao = linhas.filter((l) => (selecao[l.item.id] ?? 0) > 0).map((l) => ({ item: l.item, qtd: Math.min(l.falta, selecao[l.item.id]) }))
+    const valor = arred(alocacao.reduce((s, a) => s + a.qtd * a.item.preco, 0))
+    const base = criarPedidoDaComanda({ comanda: c, alocacao, valor, desconto: 0, pagamentos: [], recebidoDinheiro: 0, caixa: caixaAberto, pedidos, config })
+    const pedido: Pedido = {
+      ...base,
+      itens: base.itens.map((i) => ({ ...i, preco: 0 })),
+      subtotal: 0,
+      total: 0,
+      cortesia: { motivo, valor },
+      cliente: `🎁 ${motivo} — ${base.cliente}`,
+    }
+    setPedidos((ps) => [...ps, pedido])
+    setCortesiaAberta(false)
+    setModo('ver')
+    setSelecao({})
   }
 
   function cobrar(desconto: number, pagamentos: Pagamento[], recebido: number) {
@@ -429,6 +450,9 @@ export function DetalheComanda({
               <button className={btn.secundario} onClick={() => (setModo('ver'), setSelecao({}))}>
                 Voltar
               </button>
+              <button className={btn.secundario} disabled={valorSelecao <= 0 || !caixaAberto} onClick={() => setCortesiaAberta(true)} title="Cortesia / consumo próprio: não entra dinheiro">
+                🎁 Cortesia
+              </button>
               <button className={btn.verde} disabled={valorSelecao <= 0 || !caixaAberto} onClick={() => setCobrando({ tipo: 'itens', selecao })}>
                 Receber {brl(valorSelecao)}
               </button>
@@ -504,7 +528,13 @@ export function DetalheComanda({
                   <li key={p.id} className="flex items-center gap-2 py-2">
                     <span className="flex-1">
                       {hora(p.criadoEm)} · {p.parte ? `pessoa ${p.parte} · ` : ''}
-                      {p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}
+                      {p.cortesia ? (
+                        <span className="font-semibold text-orange-700">
+                          🎁 {p.cortesia.motivo} (valia {brl(p.cortesia.valor)})
+                        </span>
+                      ) : (
+                        p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')
+                      )}
                     </span>
                     <b>{brl(p.total)}</b>
                     <button title="Reimprimir cupom" onClick={() => imprimirPedido(p, config, { churrasqueira: false, cliente: true })}>
@@ -540,6 +570,14 @@ export function DetalheComanda({
         </aside>
       </div>
 
+      {cortesiaAberta && (
+        <ModalCortesia
+          valor={valorSelecao}
+          custo={arred(linhas.reduce((t, l) => t + Math.min(l.falta, selecao[l.item.id] ?? 0) * l.item.custo, 0))}
+          aoFechar={() => setCortesiaAberta(false)}
+          aoConfirmar={darCortesia}
+        />
+      )}
       {cobrando && (
         <ModalPagamento subtotal={valorCobranca} viagem={false} aoFechar={() => setCobrando(null)} aoConfirmar={cobrar} />
       )}

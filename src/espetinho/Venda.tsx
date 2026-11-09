@@ -71,6 +71,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   /** Venda dividida: o pedido vira uma comanda "Balcão" e usa a tela de pagar por itens / dividir. */
   const [divididaId, setDivididaId] = useState<string | null>(null)
   const [lancandoMais, setLancandoMais] = useState(false)
+  const [cortesiaAberta, setCortesiaAberta] = useState(false)
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [montandoCombo, setMontandoCombo] = useState<Produto | null>(null)
@@ -278,6 +279,43 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     if (config.imprimirAoFinalizar && config.viaChurrasqueira) imprimirLancamento(c, c.itens, config, true)
     limpar()
     setDivididaId(c.id)
+  }
+
+  /** Consumo próprio / cortesia: sai do estoque, não entra dinheiro, o custo sai do lucro. */
+  function registrarCortesia(motivo: string) {
+    if (!caixaAberto || !linhas.length) return
+    const itensVenda = montarItens()
+    const valor = arred(itensVenda.reduce((s, i) => s + i.preco * i.qtd, 0))
+    const itens = itensVenda.map((i) => ({ ...i, preco: 0 }))
+    const numero = pedidos.filter((p) => p.caixaId === caixaAberto.id).reduce((m, p) => Math.max(m, p.numero), 0) + 1
+    const pedido: Pedido = {
+      id: novoId(),
+      numero,
+      caixaId: caixaAberto.id,
+      criadoEm: new Date().toISOString(),
+      cliente: `🎁 ${motivo}${cliente.trim() ? ` — ${cliente.trim()}` : ''}`,
+      viagem,
+      itens,
+      subtotal: 0,
+      desconto: 0,
+      total: 0,
+      pagamentos: [],
+      recebidoDinheiro: 0,
+      troco: 0,
+      taxas: 0,
+      custoTotal: arred(itens.reduce((s, i) => s + i.custo * i.qtd, 0)),
+      cortesia: { motivo, valor },
+      cancelado: false,
+      entregue: false,
+    }
+    setPedidos((ps) => [...ps, pedido])
+    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(itens, produtos, insumos), -1))
+    setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
+    // só a via de preparo (se tiver o que preparar); não tem cupom de cliente
+    if (config.imprimirAoFinalizar && config.viaChurrasqueira && itens.some((i) => i.categoria !== 'bebida'))
+      imprimirPedido(pedido, config, { churrasqueira: true, cliente: false })
+    setCortesiaAberta(false)
+    limpar()
   }
 
   function finalizar(desconto: number, pagamentos: Pagamento[], recebidoDinheiro: number) {
@@ -640,6 +678,11 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
                 👥 Dividir conta / pagar itens separados
               </button>
             )}
+            {!app && (
+              <button className="mt-2 w-full py-1 text-sm font-semibold text-stone-500 hover:text-orange-700" disabled={!linhas.length} onClick={() => setCortesiaAberta(true)}>
+                🎁 Cortesia / consumo próprio (não é venda)
+              </button>
+            )}
           </>
         )}
       </aside>
@@ -692,6 +735,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
         />
       )}
 
+      {cortesiaAberta && <ModalCortesia valor={subtotal} custo={arred(montarItens().reduce((s, i) => s + i.custo * i.qtd, 0))} aoFechar={() => setCortesiaAberta(false)} aoConfirmar={registrarCortesia} />}
       {pagando && (
         <ModalPagamento subtotal={subtotal} viagem={viagem} app={app ? NOMES_CANAL[canal] : undefined} aoFechar={() => setPagando(false)} aoConfirmar={finalizar} />
       )}
@@ -1009,6 +1053,54 @@ function ModalVincularCodigo({
         ))}
       </ul>
       <p className="mt-2 text-xs text-stone-500">Produto novo? Cadastre em Cadastros (dá para bipar o código no campo “Código de barras”).</p>
+    </Modal>
+  )
+}
+
+const MOTIVOS_CORTESIA = ['Consumo próprio', 'Cortesia para cliente', 'Funcionário', 'Degustação']
+
+/** Saída sem venda: escolhe o motivo; mostra quanto valeria e quanto custa (o custo sai do lucro). */
+export function ModalCortesia({ valor, custo, aoFechar, aoConfirmar }: { valor: number; custo: number; aoFechar: () => void; aoConfirmar: (motivo: string) => void }) {
+  const [motivo, setMotivo] = useState(MOTIVOS_CORTESIA[0])
+  const [outro, setOutro] = useState('')
+  const final = motivo === 'outro' ? outro.trim() : motivo
+  return (
+    <Modal titulo="🎁 Cortesia / consumo próprio" aberto aoFechar={aoFechar}>
+      <p className="text-sm text-stone-600">
+        Os itens <b>saem do estoque</b>, mas <b>não entram como venda</b> nem no caixa. O custo deles sai do lucro e aparece separado nos relatórios.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {MOTIVOS_CORTESIA.map((m) => (
+          <button key={m} onClick={() => setMotivo(m)} className={`rounded-full px-3 py-2 font-bold ${motivo === m ? 'bg-orange-600 text-white' : 'bg-stone-100'}`}>
+            {m}
+          </button>
+        ))}
+        <button onClick={() => setMotivo('outro')} className={`rounded-full px-3 py-2 font-bold ${motivo === 'outro' ? 'bg-orange-600 text-white' : 'bg-stone-100'}`}>
+          Outro…
+        </button>
+      </div>
+      {motivo === 'outro' && (
+        <input
+          className="mt-2 w-full rounded-xl border-2 border-stone-200 px-3 py-2 outline-none focus:border-orange-500"
+          placeholder="Ex.: Aniversário do cliente, sorteio…"
+          value={outro}
+          autoFocus
+          onChange={(e) => setOutro(e.target.value)}
+        />
+      )}
+      <div className="mt-4 grid grid-cols-2 gap-2 text-center">
+        <div className="rounded-xl bg-stone-100 p-3">
+          <div className="text-xs text-stone-600">Valeria na venda</div>
+          <div className="text-xl font-extrabold">{brl(valor)}</div>
+        </div>
+        <div className="rounded-xl bg-red-50 p-3">
+          <div className="text-xs text-red-700">Custo (sai do lucro)</div>
+          <div className="text-xl font-extrabold text-red-700">{brl(custo)}</div>
+        </div>
+      </div>
+      <button className={`${btn.primario} mt-4 w-full text-lg`} disabled={!final} onClick={() => aoConfirmar(final)}>
+        ✔ Registrar {final ? `(${final})` : ''}
+      </button>
     </Modal>
   )
 }

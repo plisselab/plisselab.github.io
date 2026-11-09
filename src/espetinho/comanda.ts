@@ -34,7 +34,8 @@ export function totalComanda(c: Comanda) {
  * Calculado pelo dinheiro e não pelas frações dos itens, para a conta dividida fechar no centavo (50 ÷ 3 = 16,67 + 16,67 + 16,66).
  */
 export function saldoComanda(c: Comanda, pedidos: Pedido[]) {
-  const cobrado = pedidos.filter((p) => p.comandaId === c.id && !p.cancelado).reduce((s, p) => s + p.subtotal, 0)
+  // cortesia: os itens ficam quitados pelo valor que teriam (sem entrar dinheiro)
+  const cobrado = pedidos.filter((p) => p.comandaId === c.id && !p.cancelado).reduce((s, p) => s + (p.cortesia ? p.cortesia.valor : p.subtotal), 0)
   return Math.max(0, arred(totalComanda(c) - cobrado))
 }
 

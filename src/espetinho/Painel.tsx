@@ -189,7 +189,15 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
                     .join(' · ')}
                 </div>
                 <div className="text-sm">
-                  <b>{brl(p.total)}</b> · {p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}
+                  {p.cortesia ? (
+                    <span className="font-semibold text-orange-700">
+                      🎁 {p.cortesia.motivo} · valia {brl(p.cortesia.valor)} · custo {brl(p.custoTotal)}
+                    </span>
+                  ) : (
+                    <>
+                      <b>{brl(p.total)}</b> · {p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}
+                    </>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
