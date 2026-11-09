@@ -12,7 +12,7 @@ import {
   totalComanda,
 } from './comanda'
 import { NOMES_FORMA, arred, brl, consumoDosItens, consumoInsumosDosItens, hora, moverEstoqueInsumos, moverEstoqueProdutos, novoId, type Dados } from './dados'
-import { imprimirConferencia, imprimirLancamento, imprimirPedido } from './impressao'
+import { imprimirConferencia, imprimirContaCompleta, imprimirCupons, imprimirLancamento, imprimirPedido } from './impressao'
 import type { Comanda, ItemComanda, Pagamento, Pedido } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 import Venda, { ModalPagamento } from './Venda'
@@ -134,7 +134,7 @@ export default function Comandas({ dados, irPara }: { dados: Dados; irPara: (aba
                     <b>{rotuloComanda(c)}</b> <span className="text-sm text-stone-500">nº {c.numero}</span>
                   </span>
                   <span className={statusComanda(c, pedidos) === 'cancelada' ? 'text-red-600' : 'text-emerald-700'}>
-                    {statusComanda(c, pedidos) === 'cancelada' ? 'cancelada' : `paga · ${brl(totalComanda(c))}`}
+                    {statusComanda(c, pedidos) === 'cancelada' ? (c.juntadaNa ? `juntada na nº ${c.juntadaNa}` : 'cancelada') : `paga · ${brl(totalComanda(c))}`}
                   </span>
                 </button>
               </li>
@@ -206,6 +206,25 @@ function DetalheComanda({
   const [editando, setEditando] = useState(false)
   const [pessoas, setPessoas] = useState(c.divisao?.pessoas ?? 2)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
+  const [juntando, setJuntando] = useState(false)
+  const outrasAbertas = dados.comandas.filter((x) => x.id !== c.id && statusComanda(x, pedidos) === 'aberta')
+
+  /** Mesas que se juntaram: passa todos os itens desta comanda para outra (o estoque não muda). */
+  function juntarCom(destino: Comanda) {
+    if (pagos.length) return alert('Esta comanda já tem pagamento — receba ou estorne antes de juntar.')
+    if (!confirm(`Passar todos os itens de ${rotuloComanda(c)} para ${rotuloComanda(destino)} (comanda ${destino.numero})?`)) return
+    setComandas((cs) =>
+      cs.map((x) =>
+        x.id === destino.id
+          ? { ...x, itens: [...x.itens, ...c.itens] }
+          : x.id === c.id
+            ? { ...x, itens: [], canceladaEm: new Date().toISOString(), juntadaNa: destino.numero }
+            : x,
+      ),
+    )
+    setJuntando(false)
+    aoVoltar()
+  }
 
   const linhas = restantes(c, pedidos)
   const total = totalComanda(c)
@@ -276,7 +295,9 @@ function DetalheComanda({
           <div className="text-sm text-stone-300">
             comanda nº {c.numero} · aberta às {hora(c.abertaEm)} ({tempoDesde(c.abertaEm)})
             {status === 'paga' && <span className="ml-2 rounded bg-emerald-600 px-2 font-bold text-white">PAGA</span>}
-            {status === 'cancelada' && <span className="ml-2 rounded bg-red-600 px-2 font-bold text-white">CANCELADA</span>}
+            {status === 'cancelada' && (
+              <span className="ml-2 rounded bg-red-600 px-2 font-bold text-white">{c.juntadaNa ? `JUNTADA NA COMANDA ${c.juntadaNa}` : 'CANCELADA'}</span>
+            )}
           </div>
           {aberta && (
             <button className="mt-1 text-xs text-stone-300 underline" onClick={() => setEditando(true)}>
@@ -290,6 +311,20 @@ function DetalheComanda({
           {saldo < total - 0.004 && <div className="text-sm text-stone-300">consumo total {brl(total)}</div>}
         </div>
       </div>
+
+      {status === 'paga' && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border-2 border-emerald-400 bg-emerald-50 p-3">
+          <span className="flex-1 font-extrabold text-emerald-900">✔ Conta quitada — {brl(total)}</span>
+          <button className={btn.secundario + ' !py-2'} onClick={() => imprimirContaCompleta(c, pagos, config)}>
+            🖨️ Conta completa
+          </button>
+          {pagos.length > 1 && (
+            <button className={btn.secundario + ' !py-2'} onClick={() => imprimirCupons(pagos, config)}>
+              🖨️ Cupom de cada pagamento ({pagos.length})
+            </button>
+          )}
+        </div>
+      )}
 
       {ultimo && (
         <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-600 p-3 text-white">
@@ -476,10 +511,25 @@ function DetalheComanda({
                   </li>
                 ))}
               </ul>
-              <p className="mt-1 text-xs text-stone-500">Para estornar um pagamento, cancele o pedido no Painel — a conta reabre sozinha.</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button className={btn.secundario + ' !px-3 !py-1.5 text-sm'} onClick={() => imprimirContaCompleta(c, pagos, config)}>
+                  🖨️ Conta completa
+                </button>
+                {pagos.length > 1 && (
+                  <button className={btn.secundario + ' !px-3 !py-1.5 text-sm'} onClick={() => imprimirCupons(pagos, config)}>
+                    🖨️ Todos os cupons
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-stone-500">Para estornar um pagamento, cancele o pedido no Painel — a conta reabre sozinha.</p>
             </section>
           )}
 
+          {aberta && outrasAbertas.length > 0 && c.itens.length > 0 && pagos.length === 0 && (
+            <button className={`${btn.secundario} w-full`} onClick={() => setJuntando(true)}>
+              🔗 Juntar com outra mesa
+            </button>
+          )}
           {aberta && (
             <button className="w-full text-sm text-red-600 underline" onClick={cancelarComanda}>
               Cancelar comanda
@@ -490,6 +540,22 @@ function DetalheComanda({
 
       {cobrando && (
         <ModalPagamento subtotal={valorCobranca} viagem={false} aoFechar={() => setCobrando(null)} aoConfirmar={cobrar} />
+      )}
+
+      {juntando && (
+        <Modal titulo={`Juntar ${rotuloComanda(c)} com…`} aberto aoFechar={() => setJuntando(false)}>
+          <p className="mb-3 text-sm text-stone-600">Os itens desta comanda passam para a escolhida, que fica com a conta toda.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {outrasAbertas.map((x) => (
+              <button key={x.id} className="rounded-xl border-2 border-stone-200 p-3 text-left hover:border-orange-400" onClick={() => juntarCom(x)}>
+                <div className="font-extrabold">{rotuloComanda(x)}</div>
+                <div className="text-sm text-stone-500">
+                  comanda {x.numero} · {brl(saldoComanda(x, pedidos))}
+                </div>
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {editando && (

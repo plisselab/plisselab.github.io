@@ -68,6 +68,7 @@ function viaChurrasqueira(p: Pedido, cab?: { rotulo: string; numero: number; avi
     { titulo: 'Combos e jantinhas', itens: p.itens.filter((i) => i.categoria === 'combo') },
     { titulo: 'Acompanhamentos', itens: p.itens.filter((i) => i.categoria === 'outro') },
     { titulo: 'Bebidas', itens: p.itens.filter((i) => i.categoria === 'bebida') },
+    { titulo: 'Bar — doses e drinks', itens: p.itens.filter((i) => i.categoria === 'drink') },
   ].filter((g) => g.itens.length)
   const brasa = espetosParaBrasa(p.itens)
   const totalEspetos = brasa.reduce((s, e) => s + e.qtd, 0)
@@ -320,4 +321,52 @@ export function imprimirConferencia(
   </div>`,
     config,
   )
+}
+
+/** Conta completa da comanda: tudo que foi consumido e cada pagamento (quem pagou, como e quanto). */
+export function imprimirContaCompleta(c: Comanda, pagos: Pedido[], config: Config) {
+  const total = c.itens.reduce((s, i) => s + i.preco * i.qtd, 0)
+  const recebido = pagos.reduce((s, p) => s + p.total, 0)
+  const descontos = pagos.reduce((s, p) => s + p.desconto, 0)
+  const falta = Math.max(0, total - pagos.reduce((s, p) => s + p.subtotal, 0))
+  imprimirHTML(
+    `<div class="via">
+    ${cabecalhoLoja(config)}
+    <div class="tag">CONTA COMPLETA</div>
+    <div class="num"><small>COMANDA</small>Nº ${numPedido(c.numero)}</div>
+    <div class="c grande">${esc(rotuloComanda(c))}</div>
+    <div class="c">Aberta ${data(c.abertaEm)} ${hora(c.abertaEm)}</div>
+    <hr class="forte"><div class="sec">Consumo</div>
+    <table>
+      ${c.itens
+        .map(
+          (i) => `<tr class="linha"><td>${i.qtd}x ${esc(i.nome)}${i.escolhas?.length ? `<br><span class="peq">(${i.escolhas.map((e) => `${e.qtd * i.qtd} ${esc(e.nome)}`).join(', ')})</span>` : ''}</td><td class="r">${brl(i.preco * i.qtd)}</td></tr>`,
+        )
+        .join('')}
+      <tr class="tot"><td>TOTAL</td><td class="r">${brl(total)}</td></tr>
+    </table>
+    <hr class="forte"><div class="sec">Pagamentos</div>
+    <table>
+      ${pagos
+        .map(
+          (p) =>
+            `<tr class="linha"><td>${hora(p.criadoEm)} ${p.parte ? `Pessoa ${p.parte}` : 'Pagamento'}<br><span class="peq">${p.pagamentos.map((pg) => NOMES_FORMA[pg.forma]).join(' + ')}${p.desconto > 0 ? ` · desc. ${brl(p.desconto)}` : ''}${p.troco > 0 ? ` · troco ${brl(p.troco)}` : ''}</span></td><td class="r">${brl(p.total)}</td></tr>`,
+        )
+        .join('')}
+      ${descontos > 0 ? `<tr class="linha"><td>Descontos</td><td class="r">-${brl(descontos)}</td></tr>` : ''}
+      <tr class="tot"><td>PAGO</td><td class="r">${brl(recebido)}</td></tr>
+      ${falta > 0.004 ? `<tr class="tot"><td>FALTA</td><td class="r">${brl(falta)}</td></tr>` : '<tr class="linha"><td colspan="2" class="c"><b>CONTA QUITADA</b></td></tr>'}
+    </table>
+    <hr>
+    ${config.rodape ? `<div class="rodape">${esc(config.rodape)}</div>` : ''}
+    <div class="rodape peq">NÃO É DOCUMENTO FISCAL</div>
+  </div>`,
+    config,
+  )
+}
+
+/** Vários cupons de cliente de uma vez (cada um sai cortado separado). */
+export function imprimirCupons(pedidos: Pedido[], config: Config) {
+  if (!pedidos.length) return
+  imprimirHTML(pedidos.map((p) => viaCliente(p, config)).join(''), config)
 }

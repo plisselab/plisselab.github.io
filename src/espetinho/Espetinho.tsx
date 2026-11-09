@@ -32,6 +32,28 @@ export default function Espetinho() {
   const pasta = usePasta(dados)
   const [carregando, setCarregando] = useState(false)
   const [aba, setAba] = useState<Aba>('venda')
+  const [gaveta, setGaveta] = useState(false)
+  const [recolhido, setRecolhidoEstado] = useState(() => {
+    try {
+      return localStorage.getItem('espeto:menu-recolhido') === '1'
+    } catch {
+      return false
+    }
+  })
+  const setRecolhido = (f: (v: boolean) => boolean) =>
+    setRecolhidoEstado((v) => {
+      const novo = f(v)
+      try {
+        localStorage.setItem('espeto:menu-recolhido', novo ? '1' : '0')
+      } catch {
+        // sem armazenamento, só não lembra a escolha
+      }
+      return novo
+    })
+  const irPara = (a: Aba) => {
+    setAba(a)
+    setGaveta(false)
+  }
 
   useEffect(() => {
     const titulo = document.title
@@ -45,81 +67,141 @@ export default function Espetinho() {
   const comandasAbertas = dados.comandas.filter((c) => statusComanda(c, dados.pedidos) === 'aberta').length
   const r = dados.caixaAberto ? resumirCaixa(dados.caixaAberto, dados.pedidos, dados.produtos, dados.movEstoque) : null
 
-  return (
-    <div className="min-h-screen bg-stone-100 text-stone-900">
-      <header className="sticky top-0 z-20 bg-stone-900 text-white shadow">
-        <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-3 py-2">
-          <div className="mr-2 hidden shrink-0 items-center gap-2 sm:flex">
-            <span className="text-2xl">🔥</span>
-            <span className="max-w-[12rem] truncate font-extrabold">{dados.config.nomeLoja}</span>
-          </div>
-          <nav className="flex flex-1 gap-1 overflow-x-auto">
-            {ABAS.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => setAba(a.id)}
-                className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 font-bold ${aba === a.id ? 'bg-orange-600 text-white' : 'text-stone-300 hover:bg-white/10'}`}
+  const statusPasta =
+    pasta.estado.tipo === 'nenhuma'
+      ? null
+      : {
+          texto:
+            pasta.estado.tipo === 'ok'
+              ? 'Drive: salvo'
+              : pasta.estado.tipo === 'precisaPermissao'
+                ? 'Drive: clique p/ salvar'
+                : pasta.estado.tipo === 'erro'
+                  ? 'Drive: erro'
+                  : 'Drive: salvando…',
+          cor:
+            pasta.estado.tipo === 'erro' || pasta.estado.tipo === 'precisaPermissao'
+              ? 'text-red-400'
+              : pasta.estado.tipo === 'ok'
+                ? 'text-emerald-400'
+                : 'text-amber-300',
+          titulo: pasta.estado.tipo === 'erro' ? pasta.estado.msg : `Salvando na pasta ${pasta.estado.nome}`,
+          clique: () => (pasta.estado.tipo === 'precisaPermissao' ? void pasta.reautorizar() : irPara('config')),
+        }
+  const statusPlanilha = !planilha.ligado
+    ? null
+    : {
+        texto:
+          planilha.estado.tipo === 'erro'
+            ? 'Planilha: erro'
+            : planilha.estado.tipo === 'ok'
+              ? 'Planilha: salvo'
+              : planilha.estado.tipo === 'enviando'
+                ? 'Planilha: salvando…'
+                : 'Planilha: …',
+        cor: planilha.estado.tipo === 'erro' ? 'text-red-400' : planilha.estado.tipo === 'ok' ? 'text-emerald-400' : 'text-amber-300',
+        titulo: planilha.estado.tipo === 'erro' ? planilha.estado.msg : 'Sincronização com o Google Planilhas',
+        clique: () => irPara('config'),
+      }
+
+  /** Conteúdo do menu (o mesmo na lateral do computador e na gaveta do celular). */
+  const menu = (curto: boolean) => (
+    <div className="flex h-full flex-col">
+      <div className={`flex items-center gap-2 px-3 py-4 ${curto ? 'justify-center' : ''}`}>
+        <span className="text-2xl">🔥</span>
+        {!curto && <span className="min-w-0 flex-1 truncate font-extrabold leading-tight">{dados.config.nomeLoja}</span>}
+      </div>
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2">
+        {ABAS.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => irPara(a.id)}
+            title={curto ? a.nome : undefined}
+            className={`relative flex w-full items-center gap-3 rounded-xl py-2.5 font-bold transition ${curto ? 'justify-center px-0' : 'px-3'} ${
+              aba === a.id ? 'bg-orange-600 text-white' : 'text-stone-300 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-xl">{a.icone}</span>
+            {!curto && <span className="flex-1 text-left">{a.nome}</span>}
+            {a.id === 'comandas' && comandasAbertas > 0 && (
+              <span
+                className={`rounded-full bg-white px-1.5 text-xs font-black text-orange-700 ${curto ? 'absolute right-1 top-1' : ''}`}
               >
-                <span>{a.icone}</span>
-                <span>{a.nome}</span>
-                {a.id === 'comandas' && comandasAbertas > 0 && (
-                  <span className="rounded-full bg-white px-1.5 text-xs font-black text-orange-700">{comandasAbertas}</span>
-                )}
-              </button>
-            ))}
-          </nav>
-          {pasta.estado.tipo !== 'nenhuma' && (
-            <button
-              onClick={() => (pasta.estado.tipo === 'precisaPermissao' ? void pasta.reautorizar() : setAba('config'))}
-              title={pasta.estado.tipo === 'erro' ? pasta.estado.msg : `Salvando na pasta ${pasta.estado.nome}`}
-              className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ${
-                pasta.estado.tipo === 'erro' || pasta.estado.tipo === 'precisaPermissao'
-                  ? 'bg-red-600 text-white'
-                  : pasta.estado.tipo === 'ok'
-                    ? 'text-emerald-400'
-                    : 'text-amber-300'
-              }`}
-            >
-              {pasta.estado.tipo === 'ok'
-                ? '📁 salvo'
-                : pasta.estado.tipo === 'precisaPermissao'
-                  ? '📁 clique p/ salvar'
-                  : pasta.estado.tipo === 'erro'
-                    ? '⚠ pasta'
-                    : '📁 salvando…'}
-            </button>
-          )}
-          {planilha.ligado && (
-            <button
-              onClick={() => setAba('config')}
-              title={planilha.estado.tipo === 'erro' ? planilha.estado.msg : 'Sincronização com o Google Planilhas'}
-              className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ${
-                planilha.estado.tipo === 'erro' ? 'bg-red-600 text-white' : planilha.estado.tipo === 'ok' ? 'text-emerald-400' : 'text-amber-300'
-              }`}
-            >
-              {planilha.estado.tipo === 'erro'
-                ? '⚠ planilha'
-                : planilha.estado.tipo === 'ok'
-                  ? '☁ salvo'
-                  : planilha.estado.tipo === 'enviando'
-                    ? '☁ salvando…'
-                    : '☁ …'}
-            </button>
-          )}
-          <div className="hidden shrink-0 text-right text-xs md:block">
-            {r ? (
+                {comandasAbertas}
+              </span>
+            )}
+          </button>
+        ))}
+      </nav>
+      <div className={`space-y-1 border-t border-white/10 px-3 py-3 text-xs ${curto ? 'text-center' : ''}`}>
+        <button onClick={() => irPara('caixa')} title={r ? `Caixa ${dados.caixaAberto!.numero} aberto` : 'Caixa fechado'} className="block w-full text-left">
+          {r ? (
+            curto ? (
+              <span className="block text-center text-emerald-400">● {r.qtdPedidos}</span>
+            ) : (
               <>
                 <div className="font-bold text-emerald-400">● Caixa {dados.caixaAberto!.numero} aberto</div>
-                <div className="text-stone-300">
+                <div className="text-stone-400">
                   {r.qtdPedidos} pedidos · {brl(r.faturamento)}
                 </div>
               </>
-            ) : (
-              <div className="font-bold text-red-400">● Caixa fechado</div>
-            )}
-          </div>
-        </div>
+            )
+          ) : (
+            <span className={`block font-bold text-red-400 ${curto ? 'text-center' : ''}`}>{curto ? '●' : '● Caixa fechado'}</span>
+          )}
+        </button>
+        {[statusPasta, statusPlanilha].map(
+          (st, k) =>
+            st && (
+              <button key={k} onClick={st.clique} title={st.titulo} className={`block w-full font-bold ${st.cor} ${curto ? 'text-center' : 'text-left'}`}>
+                {curto ? (k === 0 ? '📁' : '☁') : st.texto}
+              </button>
+            ),
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen bg-stone-100 text-stone-900 lg:flex">
+      {/* Menu lateral (computador): recolhe para só os ícones */}
+      <aside
+        className={`sticky top-0 hidden h-screen shrink-0 flex-col bg-stone-900 text-white shadow-xl transition-[width] duration-200 lg:flex ${recolhido ? 'w-[76px]' : 'w-60'}`}
+      >
+        <div className="min-h-0 flex-1">{menu(recolhido)}</div>
+        <button
+          onClick={() => setRecolhido((v) => !v)}
+          className="border-t border-white/10 py-3 text-sm font-bold text-stone-400 hover:bg-white/5 hover:text-white"
+          title={recolhido ? 'Abrir menu' : 'Recolher menu'}
+        >
+          {recolhido ? '»' : '« recolher'}
+        </button>
+      </aside>
+
+      {/* Celular/tablet em pé: barra fina com botão de menu */}
+      <header className="sticky top-0 z-30 flex items-center gap-3 bg-stone-900 px-3 py-2 text-white shadow lg:hidden">
+        <button className="rounded-lg px-2 py-1 text-2xl" onClick={() => setGaveta(true)} aria-label="Abrir menu">
+          ☰
+        </button>
+        <span className="text-lg">{ABAS.find((a) => a.id === aba)?.icone}</span>
+        <span className="flex-1 truncate font-extrabold">{ABAS.find((a) => a.id === aba)?.nome}</span>
+        {comandasAbertas > 0 && aba !== 'comandas' && (
+          <button className="rounded-full bg-orange-600 px-2 text-xs font-bold" onClick={() => irPara('comandas')}>
+            📝 {comandasAbertas}
+          </button>
+        )}
+        <span className={`text-xs font-bold ${r ? 'text-emerald-400' : 'text-red-400'}`}>{r ? '● aberto' : '● fechado'}</span>
       </header>
+      {gaveta && (
+        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setGaveta(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <aside className="absolute inset-y-0 left-0 w-64 bg-stone-900 text-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {menu(false)}
+          </aside>
+        </div>
+      )}
+
+      <div className="min-w-0 flex-1">
       {pasta.estado.tipo === 'precisaPermissao' && (
         <div className="bg-amber-500 text-stone-950">
           <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-3 py-2">
@@ -162,15 +244,16 @@ export default function Espetinho() {
         </div>
       )}
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
-        {aba === 'venda' && <Venda dados={dados} irPara={setAba} />}
-        {aba === 'comandas' && <Comandas dados={dados} irPara={setAba} />}
-        {aba === 'painel' && <Painel dados={dados} irPara={setAba} />}
+        {aba === 'venda' && <Venda dados={dados} irPara={irPara} />}
+        {aba === 'comandas' && <Comandas dados={dados} irPara={irPara} />}
+        {aba === 'painel' && <Painel dados={dados} irPara={irPara} />}
         {aba === 'estoque' && <Estoque dados={dados} />}
-        {aba === 'caixa' && <CaixaTela dados={dados} irPara={setAba} />}
+        {aba === 'caixa' && <CaixaTela dados={dados} irPara={irPara} />}
         {aba === 'relatorios' && <Relatorios dados={dados} />}
         {aba === 'cadastros' && <Cadastros dados={dados} />}
         {aba === 'config' && <ConfigTela dados={dados} planilha={planilha} pasta={pasta} />}
       </main>
+      </div>
     </div>
   )
 }

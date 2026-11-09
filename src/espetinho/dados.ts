@@ -27,8 +27,14 @@ export const NOMES_FORMA: Record<FormaPagamento, string> = {
 export const EMOJI_FORMA: Record<FormaPagamento, string> = { dinheiro: '💵', pix: '⚡', debito: '💳', credito: '💳' }
 export const FORMAS: FormaPagamento[] = ['dinheiro', 'pix', 'debito', 'credito']
 
-export const NOMES_CATEGORIA: Record<Categoria, string> = { espeto: 'Espetos', combo: 'Combos e jantinhas', bebida: 'Bebidas', outro: 'Outros' }
-export const CATEGORIAS: Categoria[] = ['espeto', 'combo', 'bebida', 'outro']
+export const NOMES_CATEGORIA: Record<Categoria, string> = {
+  espeto: 'Espetos',
+  combo: 'Combos e jantinhas',
+  bebida: 'Bebidas',
+  drink: 'Doses e drinks',
+  outro: 'Outros',
+}
+export const CATEGORIAS: Categoria[] = ['espeto', 'combo', 'bebida', 'drink', 'outro']
 
 // ---------- unidades ----------
 
@@ -64,6 +70,16 @@ export function custoCompleto(p: Produto, insumos: Insumo[], produtos: Produto[]
   if (escolhas) return total + escolhas.reduce((s, e) => s + custoDe(e.produtoId) * e.qtd, 0)
   for (const c of p.componentes) total += c.qtd * Math.max(0, ...c.opcoes.map(custoDe))
   return total
+}
+
+/** Preço de 1 unidade com as escolhas do combo (soma os acréscimos das opções escolhidas). */
+export function precoComEscolhas(p: Pick<Produto, 'preco' | 'componentes'>, escolhas?: Escolha[]) {
+  let preco = p.preco
+  for (const e of escolhas ?? []) {
+    const c = p.componentes?.find((x) => x.acrescimos?.[e.produtoId] !== undefined)
+    if (c) preco += (c.acrescimos![e.produtoId] ?? 0) * e.qtd
+  }
+  return arred(preco)
 }
 
 /** Quantas unidades de cada produto saem do estoque com estes itens (inclui o que vai dentro dos combos). */
@@ -513,7 +529,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
 
   const lucroBruto = faturamento - cmv
   const lucroLiquido = faturamento - taxas - cmv - despesas
-  const ordemCat: Record<Categoria, number> = { espeto: 0, combo: 1, outro: 2, bebida: 3 }
+  const ordemCat: Record<Categoria, number> = { espeto: 0, combo: 1, outro: 2, bebida: 3, drink: 4 }
   const ordemProd = (id: string) => {
     const i = produtos.findIndex((p) => p.id === id)
     return i < 0 ? 999 : i

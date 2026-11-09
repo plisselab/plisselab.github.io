@@ -38,7 +38,7 @@ export default function Estoque({ dados }: { dados: Dados }) {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="rounded-2xl border-2 border-stone-200 bg-white p-4">
-          <h2 className="text-lg font-extrabold">🥩 Carnes, baião e insumos (em kg)</h2>
+          <h2 className="text-lg font-extrabold">🥩 Carnes, bebidas, baião e insumos (kg / litros)</h2>
           <p className="text-xs text-stone-500">
             <b>Chegou compra</b>: carne/insumo comprado. <b>Preparei</b>: algo feito aqui (ex.: baião) — pese quanto rendeu. O baião sai do estoque a cada jantinha
             vendida, pela porção da ficha.
@@ -273,6 +273,11 @@ function ModalCompra({
   const [qtd, setQtd] = useState(0)
   const [valor, setValor] = useState(0)
   const [daGaveta, setDaGaveta] = useState(false)
+  // bebida em litros: dá para lançar por garrafa/barril (ex.: 6 × 965 ml = 5,79 L)
+  const emLitros = unidade === 'L' && !preparo
+  const [garrafas, setGarrafas] = useState(0)
+  const [mlGarrafa, setMlGarrafa] = useState(1000)
+  const porGarrafa = emLitros && garrafas > 0
   const unit = qtd > 0 ? valor / qtd : 0
 
   const rende = insumo ? rendePara(insumo, dados.produtos, (insumo.estoque ?? 0) + qtd) : []
@@ -305,6 +310,60 @@ function ModalCompra({
 
   return (
     <Modal titulo={`${preparo ? 'Preparei' : 'Chegou compra'} — ${nome}`} aberto aoFechar={aoFechar}>
+      {emLitros && (
+        <div className="mb-3 rounded-xl bg-violet-50 p-3">
+          <div className="text-sm font-bold text-violet-900">🍾 Lançar por garrafa / barril</div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <CampoNumero
+              rotulo="Quantas"
+              sufixo="un"
+              valor={garrafas}
+              aoMudar={(v) => {
+                const n = Math.round(v)
+                setGarrafas(n)
+                setQtd(Math.round(((n * mlGarrafa) / 1000) * 1000) / 1000)
+              }}
+            />
+            <CampoNumero
+              rotulo="Cada uma tem"
+              sufixo="ml"
+              valor={mlGarrafa}
+              aoMudar={(v) => {
+                setMlGarrafa(v)
+                if (garrafas > 0) setQtd(Math.round(((garrafas * v) / 1000) * 1000) / 1000)
+              }}
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+            {[
+              [350, 'lata'],
+              [600, 'garrafa 600'],
+              [750, 'vinho 750'],
+              [965, 'cachaça 965'],
+              [1000, '1 litro'],
+              [30000, 'barril 30 L'],
+              [50000, 'barril 50 L'],
+            ].map(([ml, r]) => (
+              <button
+                key={ml}
+                className={`rounded-full px-2.5 py-1 font-semibold ${mlGarrafa === ml ? 'bg-violet-600 text-white' : 'bg-white text-violet-900'}`}
+                onClick={() => {
+                  setMlGarrafa(ml as number)
+                  if (garrafas > 0) setQtd(Math.round(((garrafas * (ml as number)) / 1000) * 1000) / 1000)
+                }}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {porGarrafa && (
+            <p className="mt-2 text-sm text-violet-900">
+              = <b>{qtd.toLocaleString('pt-BR')} L</b>
+              {valor > 0 && ` · ${brl(valor / garrafas)} por garrafa`}
+            </p>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <CampoNumero rotulo={preparo ? 'Quanto rendeu (pesado)' : 'Quantidade que chegou'} sufixo={unidade} grande autoFocus valor={qtd} aoMudar={setQtd} />
         <CampoNumero

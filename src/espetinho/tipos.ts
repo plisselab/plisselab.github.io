@@ -32,7 +32,7 @@ export interface EmbalagemPedido {
   custo: number
 }
 
-export type Categoria = 'espeto' | 'combo' | 'bebida' | 'outro'
+export type Categoria = 'espeto' | 'combo' | 'bebida' | 'drink' | 'outro'
 
 /** Quanto de um insumo vai em 1 unidade do produto. Em gramas se o insumo é kg, em ml se é L. */
 export interface ItemFicha {
@@ -48,6 +48,8 @@ export interface Componente {
   qtd: number
   /** Produtos que podem ser escolhidos. */
   opcoes: string[]
+  /** Valor a mais no preço quando o cliente escolhe esta opção (ex.: energético +R$ 3). */
+  acrescimos?: Record<string, number>
 }
 
 export interface Produto {
@@ -234,4 +236,6 @@ export interface Comanda {
   /** Conta dividida igualmente entre pessoas (a divisão vale para o que ainda falta pagar). */
   divisao?: { id: string; pessoas: number }
   canceladaEm?: string
+  /** Quando foi juntada em outra comanda (mesas que se juntaram), o número da comanda que recebeu os itens. */
+  juntadaNa?: number
 }
