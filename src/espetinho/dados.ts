@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocalStorage } from '../hooks/useLocalStorage'
-import type { Caixa, Categoria, Config, EmbalagemPedido, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
+import type { Caixa, Categoria, Comanda, Config, EmbalagemPedido, Escolha, FormaPagamento, Insumo, ItemFicha, ItemPedido, MovEstoque, Pedido, Produto, Unidade } from './tipos'
 
 export const novoId = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -317,6 +317,7 @@ export function useEspetoDados() {
   const [caixas, setCaixas] = useLocalStorage<Caixa[]>('espeto:caixas', [])
   const [configSalva, setConfig] = useLocalStorage<Config>('espeto:config', CONFIG_INICIAL)
   const [movEstoque, setMovEstoque] = useLocalStorage<MovEstoque[]>('espeto:estoque-mov', [])
+  const [comandas, setComandas] = useLocalStorage<Comanda[]>('espeto:comandas', [])
   const config = { ...CONFIG_INICIAL, ...configSalva }
 
   // Quem já usava o sistema antes do espeto misto existir ganha ele uma vez (se apagar, não volta).
@@ -364,6 +365,8 @@ export function useEspetoDados() {
     setConfig,
     movEstoque,
     setMovEstoque,
+    comandas,
+    setComandas,
     caixaAberto,
   }
 }
@@ -521,8 +524,9 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     cancelados,
     qtdPedidos: pedidos.length,
     qtdViagem: pedidos.filter((p) => p.viagem).length,
-    espetosVendidos,
-    itensVendidos,
+    // conta dividida gera frações (⅓ de espeto); arredonda para não aparecer 2,9999
+    espetosVendidos: Math.round(espetosVendidos * 100) / 100,
+    itensVendidos: Math.round(itensVendidos * 100) / 100,
     faturamento,
     descontos,
     porForma,
@@ -540,7 +544,7 @@ export function resumirCaixa(caixa: Caixa, todosPedidos: Pedido[], produtos: Pro
     trocoInicial: caixa.trocoInicial,
     dinheiroEsperado: caixa.trocoInicial + porForma.dinheiro + suprimentos - sangrias - despesasDinheiro,
     emConta: porForma.pix + porForma.debito + porForma.credito - taxas - despesasConta,
-    porProduto: [...linhas.values()].sort(
+    porProduto: [...linhas.values()].map((l) => ({ ...l, vendidos: Math.round(l.vendidos * 100) / 100, emCombos: Math.round(l.emCombos * 100) / 100 })).sort(
       (a, b) => ordemCat[a.categoria] - ordemCat[b.categoria] || ordemProd(a.produtoId) - ordemProd(b.produtoId),
     ),
     compras,
@@ -588,7 +592,7 @@ export function reduzirImagem(arquivo: Blob, largura = 480, altura = 360): Promi
 
 // ---------- backup ----------
 
-export function montarBackup(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' | 'caixas' | 'movEstoque' | 'config'>) {
+export function montarBackup(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' | 'caixas' | 'movEstoque' | 'comandas' | 'config'>) {
   return {
     versao: 2,
     geradoEm: new Date().toISOString(),
@@ -597,6 +601,7 @@ export function montarBackup(d: Pick<Dados, 'insumos' | 'produtos' | 'pedidos' |
     pedidos: d.pedidos,
     caixas: d.caixas,
     movEstoque: d.movEstoque,
+    comandas: d.comandas,
     config: d.config,
   }
 }
@@ -609,6 +614,7 @@ export function aplicarBackup(d: Dados, b: Partial<ReturnType<typeof montarBacku
   d.setPedidos(b.pedidos)
   d.setCaixas(b.caixas)
   d.setMovEstoque(b.movEstoque ?? [])
+  d.setComandas(b.comandas ?? [])
   if (b.config)
     d.setConfig({ ...b.config, planilhaUrl: d.config.planilhaUrl, planilhaChave: d.config.planilhaChave, planilhaAuto: d.config.planilhaAuto })
 }

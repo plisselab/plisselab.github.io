@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { brl, dataHora, novoId, resumirCaixa, type Dados } from './dados'
 import { imprimirRelatorio } from './impressao'
 import { RelatorioCaixa } from './Relatorios'
+import { rotuloComanda, saldoComanda, statusComanda } from './comanda'
 import type { Movimento, TipoMovimento } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, btn } from './ui'
 
@@ -75,6 +76,9 @@ export default function CaixaTela({ dados, irPara }: { dados: Dados; irPara: (ab
           setFechadoAgora(caixaAberto.id)
         }}
         pendentes={pedidos.filter((p) => p.caixaId === caixaAberto.id && !p.entregue && !p.cancelado).length}
+        comandasAbertas={dados.comandas
+          .filter((c) => statusComanda(c, pedidos) === 'aberta' && c.itens.length > 0)
+          .map((c) => ({ rotulo: `${rotuloComanda(c)} (nº ${c.numero})`, saldo: saldoComanda(c, pedidos) }))}
       />
     </div>
   )
@@ -232,10 +236,12 @@ function Movimentos({ dados }: { dados: Dados }) {
 function FecharCaixa({
   esperado,
   pendentes,
+  comandasAbertas,
   aoFechar,
 }: {
   esperado: number
   pendentes: number
+  comandasAbertas: { rotulo: string; saldo: number }[]
   aoFechar: (contado: number, obs: string, imprimir: boolean) => void
 }) {
   const [contado, setContado] = useState(0)
@@ -265,9 +271,30 @@ function FecharCaixa({
         Imprimir relatório na térmica
       </label>
       {pendentes > 0 && <p className="mt-2 text-sm font-semibold text-amber-700">Atenção: {pendentes} pedido(s) ainda não marcados como entregues.</p>}
+      {comandasAbertas.length > 0 && (
+        <div className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+          <b>
+            {comandasAbertas.length} comanda(s) aberta(s), somando {brl(comandasAbertas.reduce((s, c) => s + c.saldo, 0))} a receber:
+          </b>
+          <ul className="mt-1 list-disc pl-5">
+            {comandasAbertas.map((c) => (
+              <li key={c.rotulo}>
+                {c.rotulo}: {brl(c.saldo)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">Se fechar agora, elas continuam abertas e o pagamento entra no próximo caixa.</p>
+        </div>
+      )}
       <button
         className={`${btn.primario} mt-4 w-full !bg-red-600 py-4 text-lg hover:!bg-red-700`}
-        onClick={() => confirm('Fechar o caixa agora? Depois disso, novas vendas exigem abrir outro caixa.') && aoFechar(contado, obs.trim(), imprimir)}
+        onClick={() =>
+          confirm(
+            (comandasAbertas.length
+              ? `Ainda há ${comandasAbertas.length} comanda(s) aberta(s) (${brl(comandasAbertas.reduce((s, c) => s + c.saldo, 0))}). Elas continuam abertas para o próximo caixa.\n\n`
+              : '') + 'Fechar o caixa agora? Depois disso, novas vendas exigem abrir outro caixa.',
+          ) && aoFechar(contado, obs.trim(), imprimir)
+        }
       >
         Fechar caixa e gerar relatório
       </button>

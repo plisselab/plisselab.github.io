@@ -35,6 +35,12 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
   const atualizar = (id: string, mudanca: Partial<Pedido>) => setPedidos((ps) => ps.map((p) => (p.id === id ? { ...p, ...mudanca } : p)))
 
   function cancelar(p: Pedido) {
+    if (p.comandaId) {
+      // pagamento de comanda: o estoque é da comanda; cancelar só estorna o valor e a conta reabre
+      if (!confirm(`Estornar o pagamento Nº ${p.numero} (${p.cliente})? Ele sai do faturamento e o valor volta a ficar em aberto na comanda.`)) return
+      atualizar(p.id, { cancelado: true })
+      return
+    }
     if (!confirm(`Cancelar o pedido Nº ${p.numero}? Ele sai do faturamento e os itens voltam para o estoque.`)) return
     atualizar(p.id, { cancelado: true })
     setInsumos((is) => moverEstoqueInsumos(is, comEmbalagens(consumoInsumosDosItens(p.itens, produtos, insumos), p.embalagens), 1))

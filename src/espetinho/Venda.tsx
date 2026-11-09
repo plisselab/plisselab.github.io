@@ -20,7 +20,7 @@ import {
   type Dados,
 } from './dados'
 import { imprimirPedido } from './impressao'
-import type { Categoria, Escolha, Pagamento, Pedido, Produto } from './tipos'
+import type { Categoria, Escolha, ItemComanda, Pagamento, Pedido, Produto } from './tipos'
 import { CampoNumero, Imagem, Modal, btn } from './ui'
 
 interface Linha {
@@ -35,7 +35,14 @@ const chaveEscolhas = (e?: Escolha[]) => (e ?? []).map((x) => `${x.produtoId}:${
 
 type Filtro = 'todos' | Categoria
 
-export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: 'caixa') => void }) {
+/** Modo comanda: a mesma tela de venda, mas os itens são lançados numa comanda em vez de cobrados na hora. */
+export interface ModoComanda {
+  titulo: string
+  aoLancar: (itens: ItemComanda[]) => void
+  aoVoltar: () => void
+}
+
+export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara: (aba: 'caixa') => void; comanda?: ModoComanda }) {
   const { produtos, setProdutos, insumos, setInsumos, pedidos, setPedidos, caixaAberto, config } = dados
   const [linhas, setLinhas] = useState<Linha[]>([])
   const [cliente, setCliente] = useState('')
@@ -162,9 +169,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     setObsAberta(null)
   }
 
-  function finalizar(desconto: number, pagamentos: Pagamento[], recebidoDinheiro: number) {
-    if (!caixaAberto) return
-    const itens = linhas
+  function montarItens() {
+    return linhas
       .map((l) => {
         const p = prodPorId(l.produtoId)
         if (!p) return null
@@ -181,6 +187,22 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
+  }
+
+  /** Comanda: anota os itens na mesa, tira do estoque (vão para a brasa) e limpa a tela. */
+  function lancarNaComanda() {
+    if (!comanda || !linhas.length) return
+    const itens = montarItens()
+    const agora = new Date().toISOString()
+    setInsumos((is) => moverEstoqueInsumos(is, consumoInsumosDosItens(itens, produtos, insumos), -1))
+    setProdutos((ps) => moverEstoqueProdutos(ps, consumoDosItens(itens), -1))
+    comanda.aoLancar(itens.map((i) => ({ ...i, id: novoId(), lancadoEm: agora })))
+    limpar()
+  }
+
+  function finalizar(desconto: number, pagamentos: Pagamento[], recebidoDinheiro: number) {
+    if (!caixaAberto) return
+    const itens = montarItens()
     const total = arred(subtotal - desconto)
     const emDinheiro = pagamentos.filter((p) => p.forma === 'dinheiro').reduce((s, p) => s + p.valor, 0)
     const numero = pedidos.filter((p) => p.caixaId === caixaAberto.id).reduce((m, p) => Math.max(m, p.numero), 0) + 1
@@ -215,7 +237,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
     limpar()
   }
 
-  if (!caixaAberto) {
+  if (!caixaAberto && !comanda) {
     return (
       <div className="mx-auto mt-16 max-w-md rounded-2xl border-2 border-dashed border-stone-300 bg-white p-8 text-center">
         <div className="text-5xl">🔒</div>
@@ -292,7 +314,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
       {/* Comanda */}
       <aside id="comanda" className="w-full shrink-0 rounded-2xl border-2 border-stone-200 bg-white p-4 lg:sticky lg:top-4 lg:w-[400px]">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-extrabold">Pedido</h2>
+          <h2 className="text-xl font-extrabold">{comanda ? `+ Itens para ${comanda.titulo}` : 'Pedido'}</h2>
           {linhas.length > 0 && (
             <button className="text-sm font-semibold text-red-600 hover:underline" onClick={limpar}>
               Limpar
@@ -300,6 +322,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
           )}
         </div>
 
+{!comanda && (
+          <>
         <input
           className="mt-3 w-full rounded-xl border-2 border-stone-200 px-3 py-2 text-lg outline-none focus:border-orange-500"
           placeholder="Nome do cliente ou mesa (opcional)"
@@ -345,6 +369,9 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
               )
             })}
           </div>
+        )}
+
+          </>
         )}
 
         <ul className="mt-3 divide-y divide-stone-100">
@@ -420,9 +447,20 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
           <span className="text-stone-600">{qtdItens} {qtdItens === 1 ? 'item' : 'itens'}</span>
           <span className="text-3xl font-black">{brl(subtotal)}</span>
         </div>
-        <button className={`${btn.verde} mt-3 w-full py-4 text-xl`} disabled={!linhas.length} onClick={() => setPagando(true)}>
-          Finalizar pedido
-        </button>
+        {comanda ? (
+          <>
+            <button className={`${btn.verde} mt-3 w-full py-4 text-xl`} disabled={!linhas.length} onClick={lancarNaComanda}>
+              ✔ Lançar na comanda
+            </button>
+            <button className={`${btn.secundario} mt-2 w-full`} onClick={comanda.aoVoltar}>
+              {linhas.length ? 'Cancelar e voltar' : '← Voltar para a comanda'}
+            </button>
+          </>
+        ) : (
+          <button className={`${btn.verde} mt-3 w-full py-4 text-xl`} disabled={!linhas.length} onClick={() => setPagando(true)}>
+            Finalizar pedido
+          </button>
+        )}
       </aside>
 
       {/* Barra fixa no celular */}
@@ -432,8 +470,8 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
             <div className="text-sm text-stone-500">{qtdItens} itens · ver pedido</div>
             <div className="text-2xl font-black">{brl(subtotal)}</div>
           </button>
-          <button className={`${btn.verde} text-lg`} onClick={() => setPagando(true)}>
-            Finalizar
+          <button className={`${btn.verde} text-lg`} onClick={() => (comanda ? lancarNaComanda() : setPagando(true))}>
+            {comanda ? 'Lançar' : 'Finalizar'}
           </button>
         </div>
       )}
@@ -479,7 +517,7 @@ export default function Venda({ dados, irPara }: { dados: Dados; irPara: (aba: '
   )
 }
 
-function ModalPagamento({
+export function ModalPagamento({
   subtotal,
   viagem,
   aoFechar,

@@ -90,6 +90,8 @@ export interface ItemPedido {
   obs: string
   /** Combo: produtos escolhidos para 1 unidade do combo. */
   escolhas?: Escolha[]
+  /** Pagamento de comanda: qual item da comanda este pagamento quita (qtd pode ser fração ao dividir a conta). */
+  comandaItemId?: string
 }
 
 export interface Escolha {
@@ -120,6 +122,11 @@ export interface Pedido {
   custoTotal: number
   /** Embalagens usadas no pedido para viagem (saquinho térmico…). */
   embalagens?: EmbalagemPedido[]
+  /** Pagamento de uma comanda (o estoque já saiu quando os itens foram lançados). */
+  comandaId?: string
+  /** Conta dividida: qual divisão e qual parte (ex.: "2/3"). */
+  divisaoId?: string
+  parte?: string
   cancelado: boolean
   entregue: boolean
 }
@@ -200,4 +207,31 @@ export interface MovEstoque {
   /** Montagem: insumos usados. */
   consumo?: { insumoId: string; nome: string; qtd: number; unidade: string }[]
   obs?: string
+}
+
+/** Item anotado numa comanda (mesa). Sai do estoque ao ser lançado; entra no caixa quando é pago. */
+export interface ItemComanda {
+  id: string
+  produtoId: string
+  nome: string
+  categoria: Categoria
+  emoji: string
+  preco: number
+  custo: number
+  qtd: number
+  obs: string
+  escolhas?: Escolha[]
+  lancadoEm: string
+}
+
+export interface Comanda {
+  id: string
+  numero: number
+  mesa: string
+  nome: string
+  abertaEm: string
+  itens: ItemComanda[]
+  /** Conta dividida igualmente entre pessoas (a divisão vale para o que ainda falta pagar). */
+  divisao?: { id: string; pessoas: number }
+  canceladaEm?: string
 }
