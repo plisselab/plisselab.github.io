@@ -505,6 +505,26 @@ function EditorProduto({
           </div>
           <CampoNumero rotulo="Preço de venda" prefixo="R$" grande valor={p.preco} aoMudar={(v) => set({ preco: v })} />
           <CodigosBarras codigos={p.codigos ?? []} aoMudar={(codigos) => set({ codigos })} />
+          <details className="rounded-xl border-2 border-stone-200 p-3" open={!!(p.descricao || p.tamanho || p.precoDelivery)}>
+            <summary className="cursor-pointer font-extrabold">📋 Cardápio e delivery (iFood / 99Food)</summary>
+            <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-[1fr_9rem] gap-2">
+                <CampoTexto rotulo="Descrição" valor={p.descricao ?? ''} aoMudar={(v) => set({ descricao: v || undefined })} placeholder="Ex.: Puro malte, bem gelada" />
+                <CampoTexto rotulo="Tamanho" valor={p.tamanho ?? ''} aoMudar={(v) => set({ tamanho: v || undefined })} placeholder="350 ml, 1 kg…" />
+              </div>
+              <CampoTexto rotulo="Seção no cardápio (vazio = automático)" valor={p.secao ?? ''} aoMudar={(v) => set({ secao: v || undefined })} placeholder="Ex.: Cervejas, Petiscos…" />
+              <CampoNumero
+                rotulo="Preço no app (vazio = preço + acréscimo das Configurações)"
+                prefixo="R$"
+                valor={p.precoDelivery ?? 0}
+                aoMudar={(v) => set({ precoDelivery: v > 0 ? v : undefined })}
+              />
+              <label className="flex items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={!p.foraDoDelivery} onChange={(e) => set({ foraDoDelivery: e.target.checked ? undefined : true })} />
+                Vender no iFood / 99Food
+              </label>
+            </div>
+          </details>
 
           {p.categoria === 'combo' && (
             <div className="rounded-xl border-2 border-rose-200 bg-rose-50/40 p-3">

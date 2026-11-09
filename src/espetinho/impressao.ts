@@ -58,8 +58,9 @@ function cabecalhoLoja(config: Config) {
   ${config.telefone ? `<div class="c peq">${esc(config.telefone)}</div>` : ''}`
 }
 
+const rotuloViagem = (p: Pedido) => (p.canal === 'ifood' ? 'iFOOD — VIAGEM' : p.canal === '99food' ? '99FOOD — VIAGEM' : 'PARA VIAGEM')
 const blocoViagem = (p: Pedido) =>
-  p.viagem ? `<div class="viagem">PARA VIAGEM</div>` : `<div class="local">COMER AQUI</div>`
+  p.viagem ? `<div class="viagem">${rotuloViagem(p)}</div>` : `<div class="local">COMER AQUI</div>`
 
 /** Via da churrasqueira: sem preço, letra enorme, só o que precisa ir pra brasa. */
 function viaChurrasqueira(p: Pedido, cab?: { rotulo: string; numero: number; aviso?: string }) {
@@ -115,7 +116,7 @@ function viaCliente(p: Pedido, config: Config) {
     <div class="tag">CUPOM NÃO FISCAL</div>
     <div class="num"><small>PEDIDO</small>Nº ${numPedido(p.numero)}</div>
     <div class="c">${data(p.criadoEm)} ${hora(p.criadoEm)}</div>
-    ${p.viagem ? `<div class="viagem">PARA VIAGEM</div>` : ''}
+    ${p.viagem ? `<div class="viagem">${rotuloViagem(p)}</div>` : ''}
     ${p.cliente ? `<div class="c grande">${esc(p.cliente)}</div>` : ''}
     ${p.parte ? `<div class="tag">CONTA DIVIDIDA — PARTE ${p.parte.replace('/', ' DE ')}</div>` : ''}
     <hr>
