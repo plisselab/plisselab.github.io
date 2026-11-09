@@ -20,10 +20,8 @@ interface LinhaRevisao {
   /** id do produto, 'ins:<id>' para insumo, 'novo' / 'novo-ins' para cadastrar, '' para ignorar */
   produtoId: string
   certeza: string
-  quantidade: number
-  porEmb: number
-  /** Insumo: quanto de kg/L vem em cada unidade (ex.: garrafa 1 L → 1; saco 5 kg → 5). */
-  fator: number
+  /** Quanto entra no estoque, já na unidade do produto/insumo (un, kg, L). */
+  entra: number
   total: number
 }
 
@@ -39,6 +37,18 @@ function fatorPara(descricao: string, unidade: string | undefined) {
   return 1
 }
 const arred3 = (v: number) => Math.round(v * 1000) / 1000
+const num = (v: number) => v.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+
+/** A linha da nota em português simples: "1 caixa de 12 un · R$ 38,89". */
+function resumoNota(i: ItemLido) {
+  const q = i.quantidade
+  const pl = (s: string) => (q === 1 ? s : `${s}s`)
+  const peso = i.embalagem === 'outro' && q % 1 !== 0
+  const emb =
+    i.embalagem === 'caixa' ? pl('caixa') : i.embalagem === 'fardo' ? pl('fardo') : i.embalagem === 'pacote' ? pl('pacote') : peso || /\bkg\b/i.test(i.descricao) ? 'kg' : 'un'
+  const dentro = i.unidadesPorEmbalagem && i.unidadesPorEmbalagem > 1 && emb !== 'un' && emb !== 'kg' ? ` de ${i.unidadesPorEmbalagem} un` : ''
+  return `${num(q)} ${emb}${dentro} · ${brl(i.valorTotal)}`
+}
 
 const emoji = (nome: string) =>
   /cerv|chopp|skol|brahma|heine|amstel|antarc|itaip|budw|stella|corona|spaten|original/i.test(nome)
@@ -84,6 +94,17 @@ export function LerNotaFoto({
   const prod = (id: string) => revenda.find((p) => p.id === id)
   const insDe = (v: string) => (v.startsWith('ins:') ? insumos.find((i) => `ins:${i.id}` === v) : undefined)
   // produtos e insumos concorrem juntos no casamento automático
+  /** Quanto da linha entra no estoque do produto/insumo escolhido. */
+  const calcEntra = (item: ItemLido, valor: string) => {
+    const ins = insDe(valor)
+    if (ins || valor === 'novo-ins') {
+      const unidade = ins?.unidade ?? (ehPeso(item) ? 'kg' : 'un')
+      return arred3(item.quantidade * (item.unidadesPorEmbalagem ?? 1) * fatorPara(item.descricao, unidade))
+    }
+    const p = prod(valor)
+    return arred3(item.quantidade * (item.unidadesPorEmbalagem ?? (item.embalagem === 'unidade' || !p ? 1 : (p.unidadesCaixa ?? 1))))
+  }
+  const unidadeDe = (l: LinhaRevisao) => insDe(l.produtoId)?.unidade ?? (l.produtoId === 'novo-ins' ? (ehPeso(l.item) ? 'kg' : 'un') : 'un')
   const candidatos = [...revenda.map((p) => ({ ...p, valor: p.id })), ...insumos.map((i) => ({ ...i, id: `ins:${i.id}`, valor: `ins:${i.id}` }))]
 
   async function adicionar(fs: FileList | null) {
@@ -108,18 +129,8 @@ export function LerNotaFoto({
       setLinhas(
         r.itens.map((item) => {
           const c = casarItem(item, candidatos)
-          const p = c.produto ? prod(c.produto.id) : undefined
-          const porEmb = item.unidadesPorEmbalagem ?? (item.embalagem === 'unidade' || !p ? 1 : (p.unidadesCaixa ?? 1))
-          const ins = c.produto && !p ? insDe(c.produto.id) : undefined
-          return {
-            item,
-            produtoId: c.produto?.id ?? '',
-            certeza: c.certeza,
-            quantidade: item.quantidade,
-            porEmb: Math.max(1, porEmb),
-            fator: ins ? fatorPara(item.descricao, ins.unidade) : 1,
-            total: item.valorTotal,
-          }
+          const valor = c.produto?.id ?? ''
+          return { item, produtoId: valor, certeza: c.certeza, entra: calcEntra(item, valor), total: item.valorTotal }
         }),
       )
       setEtapa('revisar')
@@ -142,7 +153,7 @@ export function LerNotaFoto({
     const result: LinhaCompra[] = []
     for (const l of usadas) {
       const codigo = l.item.codigoBarras ? limparCodigo(l.item.codigoBarras) : ''
-      const qtdTotal = arred3(l.quantidade * l.porEmb * (l.produtoId.startsWith('ins:') || l.produtoId === 'novo-ins' ? l.fator : 1))
+      const qtdTotal = arred3(l.entra)
       // ---- insumo (carne em kg, embalagem…) ----
       if (l.produtoId === 'novo-ins' || l.produtoId.startsWith('ins:')) {
         let i = insDe(l.produtoId)
@@ -181,18 +192,17 @@ export function LerNotaFoto({
           estoque: 0,
           nomesNota: [l.item.descricao],
           ...(codigo.length >= 8 ? { codigos: [codigo] } : {}),
-          ...(l.porEmb > 1 ? { unidadesCaixa: l.porEmb } : {}),
+          ...(l.item.unidadesPorEmbalagem && l.item.unidadesPorEmbalagem > 1 ? { unidadesCaixa: l.item.unidadesPorEmbalagem } : {}),
         }
         novos.push(p)
       } else {
         aprendidos.push({ produtoId: p.id, nomeNota: l.item.descricao, ...(codigo.length >= 8 ? { codigo } : {}) })
       }
-      const caixa = l.porEmb > 1
       result.push({
         produtoId: p.id,
-        porCaixa: caixa,
-        caixas: caixa ? l.quantidade : 0,
-        porCaixaUn: caixa ? l.porEmb : (p.unidadesCaixa ?? 12),
+        porCaixa: false,
+        caixas: 0,
+        porCaixaUn: p.unidadesCaixa ?? 12,
         unidades: qtdTotal,
         total: l.total,
         precoVenda: p.preco,
@@ -256,7 +266,7 @@ export function LerNotaFoto({
               </div>
             </div>
             <p className="mt-3 text-sm text-stone-600">
-              Confira cada linha: o produto do sistema, a quantidade e o valor. Linhas com <b className="text-amber-700">⚠</b> a IA teve dúvida. O que você
+              Confira cada linha: o produto do sistema, quanto entra no estoque e o valor pago. Linhas com <b className="text-amber-700">⚠</b> a IA teve dúvida. O que você
               escolher fica aprendido para a próxima nota.
             </p>
             <div className="mt-3 overflow-x-auto">
@@ -265,16 +275,13 @@ export function LerNotaFoto({
                   <tr className="border-b-2 border-stone-200 text-left text-xs uppercase text-stone-500">
                     <th className="p-2">Na nota</th>
                     <th className="p-2">Produto no sistema</th>
-                    <th className="p-2">Quantidade</th>
-                    <th className="p-2 text-right">Total da linha</th>
+                    <th className="p-2">Entra no estoque</th>
+                    <th className="p-2 text-right">Pago (com desconto)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {linhas.map((l, i) => {
-                    const p = l.produtoId && l.produtoId !== 'novo' ? prod(l.produtoId) : undefined
-                    const ehIns = l.produtoId.startsWith('ins:') || l.produtoId === 'novo-ins'
-                    const un = l.quantidade * l.porEmb * (ehIns ? l.fator : 1)
-                    const unidadeIns = insDe(l.produtoId)?.unidade ?? (l.produtoId === 'novo-ins' ? (ehPeso(l.item) ? 'kg' : 'un') : 'un')
+                    const unidade = unidadeDe(l)
                     return (
                       <tr key={i} className={`border-b border-stone-100 align-top ${l.produtoId ? '' : 'bg-stone-50 text-stone-400'}`}>
                         <td className="p-2">
@@ -286,26 +293,16 @@ export function LerNotaFoto({
                             )}
                             {l.item.descricao}
                           </div>
-                          <div className="text-xs text-stone-500">
-                            {l.item.quantidade} {l.item.embalagem}
-                            {l.item.unidadesPorEmbalagem ? ` c/ ${l.item.unidadesPorEmbalagem}` : ''}
-                            {l.item.valorUnitario != null && ` · ${brl(l.item.valorUnitario)} cada`}
-                            {l.item.codigoBarras && <span className="ml-1 font-mono">{l.item.codigoBarras}</span>}
-                          </div>
+                          <div className="mt-0.5 text-sm text-stone-700">{resumoNota(l.item)}</div>
+                          {l.item.desconto ? <div className="text-xs font-semibold text-emerald-700">desconto de {brl(l.item.desconto)} já abatido</div> : null}
+                          {l.item.codigoBarras && <div className="font-mono text-xs text-stone-400">{l.item.codigoBarras}</div>}
                         </td>
                         <td className="p-2">
                           <select
                             className={`w-full rounded-xl border-2 px-2 py-2 ${!l.produtoId ? 'border-stone-200' : l.certeza === 'parecido' ? 'border-amber-400' : 'border-emerald-400'}`}
                             value={l.produtoId}
                             onChange={(e) => {
-                              const np = prod(e.target.value)
-                              const ni = insDe(e.target.value)
-                              muda(i, {
-                                produtoId: e.target.value,
-                                certeza: 'escolhido',
-                                fator: ni ? fatorPara(l.item.descricao, ni.unidade) : 1,
-                                ...(l.item.unidadesPorEmbalagem == null && l.item.embalagem !== 'unidade' && np?.unidadesCaixa ? { porEmb: np.unidadesCaixa } : {}),
-                              })
+                              muda(i, { produtoId: e.target.value, certeza: 'escolhido', entra: calcEntra(l.item, e.target.value) })
                             }}
                           >
                             <option value="">— não lançar esta linha —</option>
@@ -345,25 +342,15 @@ export function LerNotaFoto({
                           </div>
                         </td>
                         <td className="p-2">
-                          <div className="flex items-center gap-1">
-                            <CampoNumero className="w-20" valor={l.quantidade} aoMudar={(v) => muda(i, { quantidade: v })} />
-                            <span className="text-stone-500">×</span>
-                            <CampoNumero className="w-16" valor={l.porEmb} aoMudar={(v) => muda(i, { porEmb: Math.max(1, Math.round(v)) })} />
-                            {ehIns && (unidadeIns === 'kg' || unidadeIns === 'L') && (
-                              <>
-                                <span className="text-stone-500">×</span>
-                                <CampoNumero className="w-20" valor={l.fator} aoMudar={(v) => muda(i, { fator: v > 0 ? v : 1 })} />
-                                <span className="text-xs text-stone-500">{unidadeIns} cada</span>
-                              </>
-                            )}
+                          <div className="flex items-center gap-2">
+                            <CampoNumero className="w-24" valor={l.entra} aoMudar={(v) => muda(i, { entra: v })} />
+                            <span className="font-semibold text-stone-600">{unidade}</span>
                           </div>
-                          <div className="mt-1 text-xs text-stone-500">
-                            {l.porEmb > 1 ? 'caixas × unidades' : 'quantidade'} ={' '}
-                            <b>
-                              {arred3(un).toLocaleString('pt-BR')} {unidadeIns}
-                            </b>
-                            {(p || insDe(l.produtoId)) && un > 0 && ` · ${brl(l.total / un)}/${unidadeIns}`}
-                          </div>
+                          {l.produtoId && l.entra > 0 && (
+                            <div className="mt-1 font-bold text-stone-800">
+                              {brl(l.total / l.entra)} <span className="font-normal text-stone-500">por {unidade}</span>
+                            </div>
+                          )}
                         </td>
                         <td className="p-2 text-right">
                           <CampoNumero className="ml-auto w-28" prefixo="R$" valor={l.total} aoMudar={(v) => muda(i, { total: v })} />
