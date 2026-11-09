@@ -18,7 +18,7 @@ import {
 } from './dados'
 import { LerComCamera, cameraLeSuportada, useLeitorCodigo } from './leitor'
 import { LerNotaFoto, type ResultadoNota } from './NotaFoto'
-import type { Insumo, MovEstoque, Movimento, Produto } from './tipos'
+import type { Insumo, MovEstoque, Movimento, Produto, Unidade } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
 
 /** Bebidas/produtos de revenda: sem ficha (não são montados) e sem componentes (não são fardo/combo). */
@@ -231,7 +231,7 @@ function NovaCompra({
     else if (p && compravel(p)) incluir(p)
     else setCodigoNovo(limparCodigo(c))
   }
-  useLeitorCodigo(!codigoNovo && !camera && !conferindo && !notaFoto, lerCodigo)
+  useLeitorCodigo(codigoNovo === null && !camera && !conferindo && !notaFoto, lerCodigo)
 
   /** Itens que vieram da foto da nota (já conferidos): cadastra os novos, guarda o que aprendeu e junta na compra. */
   function usarNota(r: ResultadoNota) {
@@ -444,10 +444,7 @@ function NovaCompra({
               if (p && compravel(p)) incluir(p)
               else if (resultados.length >= 1 && !/^\d{6,}$/.test(busca.trim())) incluir(resultados[0])
               else if (insumosAchados.length >= 1 && !/^\d{6,}$/.test(busca.trim())) incluirInsumo(ins(insumosAchados[0].id))
-              else if (/^\d{6,}$/.test(busca.trim())) {
-                setCodigoNovo(limparCodigo(busca))
-                setBusca('')
-              }
+              else setCodigoNovo('')
             }}
           />
           {cameraLeSuportada() && (
@@ -455,10 +452,13 @@ function NovaCompra({
               📷
             </button>
           )}
+          <button className="shrink-0 rounded-xl bg-white px-4 font-bold text-orange-700 ring-2 ring-orange-300 hover:bg-orange-50" onClick={() => setCodigoNovo('')}>
+            ➕ <span className="hidden sm:inline">Produto novo</span>
+          </button>
           <button className="shrink-0 rounded-xl bg-violet-600 px-4 font-bold text-white hover:bg-violet-700" onClick={() => setNotaFoto(true)}>
             📸 <span className="hidden sm:inline">Ler nota por foto</span>
           </button>
-          {(resultados.length > 0 || insumosAchados.length > 0) && (
+          {busca.trim() !== '' && !/^\d{6,}$/.test(busca.trim()) && (
             <ul className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded-xl border-2 border-stone-200 bg-white shadow-xl">
               {resultados.map((p, k) => (
                 <li key={p.id}>
@@ -492,7 +492,7 @@ function NovaCompra({
                     setCodigoNovo('')
                   }}
                 >
-                  + Não achei — cadastrar produto novo
+                  ➕ {resultados.length || insumosAchados.length ? 'Não achei — cadastrar' : 'Não tem — cadastrar'} “{busca.trim()}” como produto novo
                 </button>
               </li>
             </ul>
@@ -822,8 +822,13 @@ function NovaCompra({
           nomeInicial={/^\d+$/.test(busca.trim()) ? '' : busca.trim()}
           revenda={revenda}
           aoFechar={() => setCodigoNovo(null)}
+          aoNovoInsumo={(i) => {
+            dados.setInsumos((is) => [...is, i])
+            setCodigoNovo(null)
+            setTimeout(() => incluirInsumo(i), 0)
+          }}
           aoEscolher={(p, novo) => {
-            const cod = codigoNovo
+            const cod = novo ? '' : codigoNovo
             if (novo) dados.setProdutos((ps) => [...ps, p])
             else if (cod) dados.setProdutos((ps) => ps.map((x) => (x.id === p.id ? { ...x, codigos: [...(x.codigos ?? []), cod] } : x)))
             setCodigoNovo(null)
@@ -836,81 +841,148 @@ function NovaCompra({
   )
 }
 
-/** Código que não existe: vincula a um produto ou cadastra a bebida nova na hora. */
+type TipoNovo = 'bebida' | 'outro' | 'espeto' | 'insumo'
+const TIPOS_NOVO: { id: TipoNovo; rotulo: string; dica: string }[] = [
+  { id: 'bebida', rotulo: '🍺 Bebida', dica: 'cerveja, refri, água, garrafa…' },
+  { id: 'outro', rotulo: '🧊 Outro p/ vender', dica: 'gelo, carvão, cigarro, bala…' },
+  { id: 'espeto', rotulo: '🍢 Espeto pronto', dica: 'espeto que já vem montado' },
+  { id: 'insumo', rotulo: '🥩 Insumo', dica: 'carne, pão, embalagem (não vende direto)' },
+]
+const emojiDoNome = (nome: string, tipo: TipoNovo) =>
+  tipo === 'espeto'
+    ? '🍢'
+    : /gelo/i.test(nome)
+      ? '🧊'
+      : /carv/i.test(nome)
+        ? '🔥'
+        : /cerv|chopp|heine|brahma|skol|amstel|corona|budw|stella|itaip|original|spaten|antarc|devassa|eisen|lat[aã]o/i.test(nome)
+          ? '🍺'
+          : /vinho/i.test(nome)
+            ? '🍷'
+            : /cacha|pinga|vodka|whisk|conhaque|montilla|gin|rum|tequila|licor/i.test(nome)
+              ? '🥃'
+              : /[áa]gua/i.test(nome)
+                ? '💧'
+                : tipo === 'outro'
+                  ? '🛒'
+                  : '🥤'
+
+/** Produto que ainda não existe: cadastra na hora (ou vincula o código a um que já existe). */
 function ModalProdutoNovo({
   codigo,
   nomeInicial = '',
   revenda,
   aoFechar,
   aoEscolher,
+  aoNovoInsumo,
 }: {
   codigo: string
   nomeInicial?: string
   revenda: Produto[]
   aoFechar: () => void
   aoEscolher: (p: Produto, novo: boolean) => void
+  aoNovoInsumo: (i: Insumo) => void
 }) {
   const [nome, setNome] = useState(nomeInicial)
+  const [tipo, setTipo] = useState<TipoNovo>(/gelo|carv/i.test(nomeInicial) ? 'outro' : 'bebida')
   const [preco, setPreco] = useState(0)
+  const [porCaixa, setPorCaixa] = useState(12)
+  const [unidade, setUnidade] = useState<Unidade>('kg')
+  const [cod, setCod] = useState(codigo)
   const [termo, setTermo] = useState('')
   const lista = termo.trim() ? buscarProdutos(revenda, termo).slice(0, 6) : []
+  const ehInsumo = tipo === 'insumo'
+
+  function cadastrar() {
+    const n = nome.trim()
+    const c = limparCodigo(cod)
+    if (ehInsumo) {
+      aoNovoInsumo({ id: novoId(), nome: n, unidade, precoCompra: 0, qtdCompra: 1, estoque: 0, ...(c ? { codigos: [c] } : {}) })
+      return
+    }
+    aoEscolher(
+      {
+        id: novoId(),
+        nome: n,
+        categoria: tipo === 'espeto' ? 'espeto' : tipo === 'outro' ? 'outro' : 'bebida',
+        preco,
+        emoji: emojiDoNome(n, tipo),
+        ficha: [],
+        custoDireto: 0,
+        ativo: true,
+        estoque: 0,
+        unidadesCaixa: porCaixa > 0 ? porCaixa : 1,
+        ...(c ? { codigos: [c] } : {}),
+      },
+      true,
+    )
+  }
+
   return (
-    <Modal titulo="Bebida nova" aberto aoFechar={aoFechar}>
+    <Modal titulo="➕ Produto novo" aberto aoFechar={aoFechar}>
       {codigo ? (
         <p className="text-sm text-stone-600">
-          O código <b className="font-mono">{codigo}</b> não está cadastrado.
+          O código <b className="font-mono">{codigo}</b> não está cadastrado. Cadastre agora — ele já entra nesta compra.
         </p>
       ) : (
-        <p className="text-sm text-stone-600">Cadastre o produto e ele entra na compra. Dá para pôr o código de barras depois, em Cadastros.</p>
+        <p className="text-sm text-stone-600">Cadastre o produto e ele já entra nesta compra (e fica salvo em Cadastros).</p>
       )}
-      <div className="mt-3 rounded-xl bg-orange-50 p-3">
-        <div className="font-bold">Cadastrar agora</div>
-        <div className="mt-2 grid grid-cols-[1fr_8rem] gap-2">
-          <CampoTexto valor={nome} aoMudar={setNome} placeholder="Nome (ex.: Heineken lata 350 ml)" />
-          <CampoNumero prefixo="R$" valor={preco} aoMudar={setPreco} />
+      <div className="mt-3 space-y-3 rounded-xl bg-orange-50 p-3">
+        <CampoTexto rotulo="Nome do produto" valor={nome} aoMudar={setNome} placeholder="Ex.: Itaipava Latão 550 ml" />
+        <div>
+          <div className="mb-1 text-sm font-semibold text-stone-600">O que é?</div>
+          <div className="grid grid-cols-2 gap-2">
+            {TIPOS_NOVO.map((t) => (
+              <button
+                key={t.id}
+                className={`rounded-xl border-2 px-3 py-2 text-left ${tipo === t.id ? 'border-orange-500 bg-white ring-2 ring-orange-200' : 'border-stone-200 bg-white/60'}`}
+                onClick={() => setTipo(t.id)}
+              >
+                <div className="font-bold">{t.rotulo}</div>
+                <div className="text-xs text-stone-500">{t.dica}</div>
+              </button>
+            ))}
+          </div>
         </div>
-        <button
-          className={`${btn.primario} mt-2 w-full !py-2`}
-          disabled={!nome.trim()}
-          onClick={() =>
-            aoEscolher(
-              {
-                id: novoId(),
-                nome: nome.trim(),
-                categoria: 'bebida',
-                preco,
-                emoji: /cerv|chopp|heine|brahma|skol|amstel|corona|budw|stella|itaip/i.test(nome) ? '🍺' : /vinho/i.test(nome) ? '🍷' : '🥤',
-                ficha: [],
-                custoDireto: 0,
-                ativo: true,
-                estoque: 0,
-                ...(codigo ? { codigos: [codigo] } : {}),
-              },
-              true,
-            )
-          }
-        >
-          Cadastrar e incluir na compra
+        {ehInsumo ? (
+          <div>
+            <div className="mb-1 text-sm font-semibold text-stone-600">Controlar em</div>
+            <div className="flex gap-2">
+              {(['kg', 'L', 'un', 'pct'] as Unidade[]).map((u) => (
+                <button key={u} className={`flex-1 rounded-xl border-2 py-2 font-bold ${unidade === u ? 'border-orange-500 bg-white' : 'border-stone-200 bg-white/60'}`} onClick={() => setUnidade(u)}>
+                  {u}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-stone-500">A quantidade e o valor pago você põe na linha da compra.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            <CampoNumero rotulo="Preço de venda (un.)" prefixo="R$" valor={preco} aoMudar={setPreco} />
+            <CampoNumero rotulo="Unidades por caixa/fardo" valor={porCaixa} aoMudar={setPorCaixa} />
+            <p className="col-span-2 text-xs text-stone-500">Pode deixar o preço em 0 — a compra sugere pela margem.</p>
+          </div>
+        )}
+        <CampoTexto rotulo="Código de barras (opcional)" valor={cod} aoMudar={setCod} placeholder="Bipe ou digite" />
+        <button className={`${btn.primario} w-full`} disabled={!nome.trim()} onClick={cadastrar}>
+          ✓ Cadastrar e incluir na compra
         </button>
       </div>
-      <div className="mt-3">
-        {codigo && <div className="text-sm font-semibold text-stone-600">…ou é uma bebida que já existe?</div>}
-        {codigo && <input
-          className="mt-1 w-full rounded-xl border-2 border-stone-200 px-3 py-2"
-          placeholder="Buscar…"
-          value={termo}
-          onChange={(e) => setTermo(e.target.value)}
-        />}
-        <ul className="mt-1 divide-y divide-stone-100">
-          {lista.map((p) => (
-            <li key={p.id}>
-              <button className="w-full py-2 text-left font-semibold hover:bg-stone-50" onClick={() => aoEscolher(p, false)}>
-                {p.emoji} {p.nome}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {codigo && (
+        <div className="mt-3">
+          <div className="text-sm font-semibold text-stone-600">…ou é um produto que já existe? (o código fica ligado a ele)</div>
+          <input className="mt-1 w-full rounded-xl border-2 border-stone-200 px-3 py-2" placeholder="Buscar…" value={termo} onChange={(e) => setTermo(e.target.value)} />
+          <ul className="mt-1 divide-y divide-stone-100">
+            {lista.map((p) => (
+              <li key={p.id}>
+                <button className="w-full py-2 text-left font-semibold hover:bg-stone-50" onClick={() => aoEscolher(p, false)}>
+                  {p.emoji} {p.nome}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Modal>
   )
 }
