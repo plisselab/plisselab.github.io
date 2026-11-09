@@ -278,7 +278,9 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
                 ? 'border-orange-300'
                 : p.categoria === 'combo'
                   ? 'border-rose-300'
-                  : p.categoria === 'bebida'
+                  : p.categoria === 'drink'
+                    ? 'border-violet-300'
+                    : p.categoria === 'bebida'
                     ? 'border-sky-300'
                     : 'border-amber-300'
             return (

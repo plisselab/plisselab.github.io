@@ -110,7 +110,7 @@ export default function Painel({ dados, irPara }: { dados: Dados; irPara: (aba: 
             <div className="mt-4 space-y-2 border-t-2 border-stone-100 pt-3">
               {preparados.map(({ ins, rende }) => (
                 <div key={ins.id} className="flex flex-wrap items-center gap-2">
-                  <span className="flex-1 font-bold">🍚 {ins.nome}</span>
+                  <span className="flex-1 font-bold">{ins.unidade === 'L' ? '🍾' : '🍚'} {ins.nome}</span>
                   <span className="text-sm text-stone-600">{(ins.estoque ?? 0).toLocaleString('pt-BR')} {ins.unidade}</span>
                   {rende.map((x) => (
                     <span

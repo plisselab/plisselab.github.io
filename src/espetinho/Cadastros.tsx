@@ -218,6 +218,8 @@ function SeletorUnidade({ valor, aoMudar }: { valor: Unidade; aoMudar: (u: Unida
 function Produtos({ dados }: { dados: Dados }) {
   const { produtos, setProdutos, insumos } = dados
   const [editando, setEditando] = useState<Produto | null>(null)
+  const [novaDose, setNovaDose] = useState(false)
+  const temBar = produtos.some((p) => p.id.startsWith('bar-'))
 
   const mover = (idx: number, d: number) =>
     setProdutos((ps) => {
@@ -237,6 +239,21 @@ function Produtos({ dados }: { dados: Dados }) {
     <section>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-stone-600">A ordem aqui é a ordem dos botões na tela de venda.</p>
+        <div className="flex flex-wrap gap-2">
+        {!temBar && (
+          <button
+            className={btn.secundario}
+            onClick={() => {
+              if (!confirm('Adicionar exemplos de bar? (cachaça, vodka, whisky, chopp, caipirinha… — dá para editar ou excluir depois)')) return
+              adicionarExemplosBar(dados)
+            }}
+          >
+            🍹 Exemplos de bar
+          </button>
+        )}
+        <button className={btn.secundario} onClick={() => setNovaDose(true)}>
+          🥃 Nova dose / drink
+        </button>
         <button
           className={btn.primario}
           onClick={() =>
@@ -245,7 +262,9 @@ function Produtos({ dados }: { dados: Dados }) {
         >
           + Novo produto
         </button>
+        </div>
       </div>
+      {novaDose && <ModalDose dados={dados} aoFechar={() => setNovaDose(false)} />}
       <div className="overflow-x-auto rounded-2xl border-2 border-stone-200 bg-white">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
@@ -620,4 +639,173 @@ function EditorProduto({
       </div>
     </Modal>
   )
+}
+
+// ---------------- bar ----------------
+
+const ML_DOSE = [30, 50, 100, 200, 300, 500]
+
+/**
+ * Cria uma dose/drink a partir de uma bebida comprada em litros (garrafa, barril).
+ * O estoque fica na bebida (em litros); cada dose vendida desconta os ml da ficha.
+ */
+function ModalDose({ dados, aoFechar }: { dados: Dados; aoFechar: () => void }) {
+  const bebidas = dados.insumos.filter((i) => i.unidade === 'L')
+  const [insumoId, setInsumoId] = useState(bebidas[0]?.id ?? 'nova')
+  const [novaNome, setNovaNome] = useState('')
+  const [novaPreco, setNovaPreco] = useState(0)
+  const [novaMl, setNovaMl] = useState(1000)
+  const [ml, setMl] = useState(50)
+  const [nome, setNome] = useState('')
+  const [preco, setPreco] = useState(0)
+  const [emoji, setEmoji] = useState('🥃')
+
+  const ins = bebidas.find((i) => i.id === insumoId)
+  const custoLitro = insumoId === 'nova' ? (novaMl > 0 ? novaPreco / (novaMl / 1000) : 0) : ins ? custoUnitarioInsumo(ins) : 0
+  const custo = (custoLitro * ml) / 1000
+  const lucro = preco - custo
+  const doses = insumoId === 'nova' ? Math.floor(novaMl / ml) : ins ? Math.floor((ins.qtdCompra * 1000) / ml) : 0
+  const nomeBebida = insumoId === 'nova' ? novaNome.trim() : (ins?.nome ?? '')
+  const nomeFinal = nome.trim() || (nomeBebida ? `${ml >= 200 ? nomeBebida : `Dose de ${nomeBebida.toLowerCase()}`} ${ml} ml` : '')
+
+  function salvar() {
+    let idIns = insumoId
+    if (insumoId === 'nova') {
+      idIns = novoId()
+      dados.setInsumos((is) => [
+        ...is,
+        { id: idIns, nome: novaNome.trim(), unidade: 'L', precoCompra: novaPreco, qtdCompra: novaMl / 1000, estoque: 0, grupo: 'Bebidas' },
+      ])
+    }
+    dados.setProdutos((ps) => [
+      ...ps,
+      { id: novoId(), nome: nomeFinal, categoria: 'drink', preco, emoji, ficha: [{ insumoId: idIns, qtd: ml }], custoDireto: 0, ativo: true },
+    ])
+    aoFechar()
+  }
+
+  return (
+    <Modal titulo="Nova dose / drink" aberto aoFechar={aoFechar}>
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-sm font-semibold text-stone-600">Bebida (comprada em garrafa ou barril)</span>
+          <select className="w-full rounded-xl border-2 border-stone-200 bg-white px-2 py-2" value={insumoId} onChange={(e) => setInsumoId(e.target.value)}>
+            {bebidas.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.nome} — {brl(custoUnitarioInsumo(b))}/L
+              </option>
+            ))}
+            <option value="nova">+ Outra bebida…</option>
+          </select>
+        </label>
+        {insumoId === 'nova' && (
+          <div className="grid grid-cols-3 gap-2 rounded-xl bg-violet-50 p-3">
+            <CampoTexto className="col-span-3" rotulo="Nome da bebida" valor={novaNome} aoMudar={setNovaNome} placeholder="Ex.: Cachaça 51, Gin, Chopp" />
+            <CampoNumero rotulo="Paguei na garrafa" prefixo="R$" valor={novaPreco} aoMudar={setNovaPreco} />
+            <CampoNumero className="col-span-2" rotulo="A garrafa tem" sufixo="ml" valor={novaMl} aoMudar={setNovaMl} />
+          </div>
+        )}
+        <div>
+          <span className="mb-1 block text-sm font-semibold text-stone-600">Tamanho da dose</span>
+          <div className="flex flex-wrap gap-1.5">
+            {ML_DOSE.map((m) => (
+              <button key={m} onClick={() => setMl(m)} className={`rounded-full px-3 py-1.5 font-bold ${ml === m ? 'bg-violet-600 text-white' : 'bg-stone-100'}`}>
+                {m} ml
+              </button>
+            ))}
+            <CampoNumero className="w-28" sufixo="ml" valor={ml} aoMudar={(v) => setMl(Math.max(1, Math.round(v)))} />
+          </div>
+          <p className="mt-1 text-xs text-stone-500">Dose de destilado no Brasil: 50 ml. Chopp: 300 ou 500 ml.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <CampoTexto rotulo="Nome no botão" valor={nome} aoMudar={setNome} placeholder={nomeFinal || 'Ex.: Dose de cachaça'} />
+          <CampoNumero rotulo="Preço de venda" prefixo="R$" valor={preco} aoMudar={setPreco} />
+        </div>
+        <div className="flex gap-1">
+          {['🥃', '🍺', '🍻', '🍹', '🍸', '🍷', '🥂', '🍾'].map((e) => (
+            <button key={e} className={`rounded p-1 text-2xl ${emoji === e ? 'bg-violet-200' : 'hover:bg-stone-100'}`} onClick={() => setEmoji(e)}>
+              {e}
+            </button>
+          ))}
+        </div>
+        {custoLitro > 0 && (
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-stone-100 p-2">
+              <div className="text-xs text-stone-600">Custo da dose</div>
+              <div className="font-extrabold">{brl(custo)}</div>
+            </div>
+            <div className={`rounded-xl p-2 ${lucro < 0 ? 'bg-red-100' : 'bg-emerald-100'}`}>
+              <div className="text-xs text-stone-600">Lucro por dose</div>
+              <div className="font-extrabold">
+                {brl(lucro)} {preco > 0 && <span className="text-xs">({pct((lucro / preco) * 100)})</span>}
+              </div>
+            </div>
+            <div className="rounded-xl bg-stone-100 p-2">
+              <div className="text-xs text-stone-600">Doses por garrafa</div>
+              <div className="font-extrabold">{doses}</div>
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-stone-500">
+          O estoque fica na bebida, em litros: lance as garrafas em Estoque → “Chegou compra”. Cada dose vendida desconta {ml} ml e o botão mostra quantas ainda dá.
+        </p>
+      </div>
+      <button
+        className={`${btn.primario} mt-4 w-full`}
+        disabled={!nomeFinal || preco <= 0 || (insumoId === 'nova' && (!novaNome.trim() || novaMl <= 0))}
+        onClick={salvar}
+      >
+        Criar {nomeFinal || 'dose'}
+      </button>
+    </Modal>
+  )
+}
+
+/** Pacote de exemplo para bar: bebidas em litros (com estoque) e doses/drinks que descontam delas. */
+function adicionarExemplosBar(dados: Dados) {
+  const ins = (id: string, nome: string, unidade: Unidade, precoCompra: number, qtdCompra: number, grupo: string, estoque?: number): Insumo => ({
+    id,
+    nome,
+    unidade,
+    precoCompra,
+    qtdCompra,
+    grupo,
+    ...(estoque !== undefined ? { estoque } : {}),
+  })
+  const novosInsumos: Insumo[] = [
+    ins('bar-cachaca', 'Cachaça', 'L', 25, 0.965, 'Bebidas', 0),
+    ins('bar-vodka', 'Vodka', 'L', 35, 1, 'Bebidas', 0),
+    ins('bar-whisky', 'Whisky', 'L', 90, 1, 'Bebidas', 0),
+    ins('bar-chopp', 'Chopp (barril)', 'L', 600, 50, 'Bebidas', 0),
+    ins('bar-limao', 'Limão', 'un', 6, 20, 'Bar'),
+    ins('bar-acucar', 'Açúcar', 'kg', 5, 1, 'Bar'),
+    ins('bar-gelo', 'Gelo', 'kg', 12, 5, 'Bar'),
+  ]
+  const drink = (id: string, nome: string, emoji: string, preco: number, ficha: { insumoId: string; qtd: number }[]): Produto => ({
+    id,
+    nome,
+    categoria: 'drink',
+    preco,
+    emoji,
+    ficha,
+    custoDireto: 0,
+    ativo: true,
+  })
+  const caipi = (base: string) => [
+    { insumoId: base, qtd: 60 },
+    { insumoId: 'bar-limao', qtd: 1 },
+    { insumoId: 'bar-acucar', qtd: 20 },
+    { insumoId: 'bar-gelo', qtd: 150 },
+  ]
+  const novosProdutos: Produto[] = [
+    drink('bar-p-cachaca', 'Dose de cachaça', '🥃', 6, [{ insumoId: 'bar-cachaca', qtd: 50 }]),
+    drink('bar-p-vodka', 'Dose de vodka', '🥃', 8, [{ insumoId: 'bar-vodka', qtd: 50 }]),
+    drink('bar-p-whisky', 'Dose de whisky', '🥃', 15, [{ insumoId: 'bar-whisky', qtd: 50 }]),
+    drink('bar-p-caipirinha', 'Caipirinha', '🍹', 15, caipi('bar-cachaca')),
+    drink('bar-p-caipiroska', 'Caipiroska', '🍸', 18, caipi('bar-vodka')),
+    drink('bar-p-chopp300', 'Chopp 300 ml', '🍺', 9, [{ insumoId: 'bar-chopp', qtd: 300 }]),
+    drink('bar-p-chopp500', 'Chopp 500 ml', '🍻', 14, [{ insumoId: 'bar-chopp', qtd: 500 }]),
+  ]
+  dados.setInsumos((is) => [...is, ...novosInsumos.filter((n) => !is.some((i) => i.id === n.id))])
+  dados.setProdutos((ps) => [...ps, ...novosProdutos.filter((n) => !ps.some((p) => p.id === n.id))])
 }
