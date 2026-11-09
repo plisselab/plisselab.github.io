@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Cadastros from './Cadastros'
+import { ICONE_ESPETO } from './icone'
 import CaixaTela from './Caixa'
 import ConfigTela from './Config'
 import { brl, resumirCaixa, useEspetoDados } from './dados'
@@ -63,6 +64,30 @@ export default function Espetinho() {
   }
 
   // aberto pelo QR code/link "Conectar celular": liga este aparelho à mesma planilha
+  // ícone de espetinho na aba (também quando o PDV abre dentro do site da loja, em /#espetinho)
+  useEffect(() => {
+    const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')]
+    const antes = links.map((l) => [l.href, l.type] as const)
+    if (!links.length) {
+      const l = document.createElement('link')
+      l.rel = 'icon'
+      document.head.appendChild(l)
+      links.push(l)
+    }
+    links.forEach((l) => {
+      l.type = 'image/svg+xml'
+      l.href = ICONE_ESPETO
+    })
+    return () => {
+      links.forEach((l, k) => {
+        if (antes[k]) {
+          l.href = antes[k][0]
+          l.type = antes[k][1]
+        }
+      })
+    }
+  }, [])
+
   useEffect(() => {
     const c = lerConexaoDaUrl()
     if (!c) return
