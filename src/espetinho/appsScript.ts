@@ -5,7 +5,9 @@
  */
 export function codigoAppsScript(chave: string) {
   return `// PDV Espetinho — sincronização com esta planilha.
-// Cole este código em Extensões → Apps Script, salve e implante como "App da Web".
+// Jeito mais fácil: script.google.com → Novo projeto → cole este código → Implantar como "App da Web".
+// A planilha "PDV Espetinho - vendas" é criada sozinha no seu Google Drive quando o PDV se conectar.
+// (Também funciona colado dentro de uma planilha, em Extensões → Apps Script.)
 const CHAVE = ${JSON.stringify(chave)};
 const ABA_BACKUP = '_backup';
 const PEDACO = 40000; // limite de texto por célula do Google Planilhas é 50.000
@@ -27,10 +29,10 @@ function doPost(e) {
 function executar(req) {
   if (req.chave !== CHAVE) return { ok: false, erro: 'Chave errada. Copie o código de novo em Config do PDV.' };
   const props = PropertiesService.getScriptProperties();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = planilha(props);
 
   if (req.acao === 'info') {
-    return { ok: true, atualizadoEm: props.getProperty('ATUALIZADO') || null, aparelho: props.getProperty('APARELHO') || null };
+    return { ok: true, atualizadoEm: props.getProperty('ATUALIZADO') || null, aparelho: props.getProperty('APARELHO') || null, planilhaUrl: ss.getUrl() };
   }
 
   if (req.acao === 'carregar') {
@@ -70,6 +72,23 @@ function executar(req) {
   }
 
   return { ok: false, erro: 'Ação desconhecida' };
+}
+
+// A planilha onde o script foi colado; se foi criado em script.google.com, uma planilha própria criada no Drive.
+function planilha(props) {
+  try {
+    const ativa = SpreadsheetApp.getActiveSpreadsheet();
+    if (ativa) return ativa;
+  } catch (err) {}
+  const id = props.getProperty('PLANILHA_ID');
+  if (id) {
+    try {
+      return SpreadsheetApp.openById(id);
+    } catch (err) {}
+  }
+  const nova = SpreadsheetApp.create('PDV Espetinho - vendas');
+  props.setProperty('PLANILHA_ID', nova.getId());
+  return nova;
 }
 
 function responder(obj) {

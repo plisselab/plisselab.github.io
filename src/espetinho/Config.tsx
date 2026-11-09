@@ -286,10 +286,11 @@ function SecaoPlanilha({ dados, planilha }: { dados: Dados; planilha: Planilha }
 
       <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm">
         <li>
-          Crie uma planilha nova em <b>sheets.google.com</b> (ex.: “PDV Espetinho”).
+          Abra <b>script.google.com</b> com a conta Google onde quer guardar as vendas (confira a foto no canto de cima) e clique em{' '}
+          <b>Novo projeto</b>. Não precisa criar a planilha: ela é criada sozinha no seu Drive.
         </li>
         <li>
-          Na planilha: <b>Extensões → Apps Script</b>. Apague o que estiver lá e cole o código:{' '}
+          Apague o que estiver lá e cole o código:{' '}
           <button className={btn.secundario + ' !px-3 !py-1 text-sm'} onClick={copiar}>
             {copiado ? '✔ Copiado!' : '📋 Copiar código'}
           </button>
@@ -328,8 +329,22 @@ function SecaoPlanilha({ dados, planilha }: { dados: Dados; planilha: Planilha }
         </div>
       )}
 
+      <p className="mt-2 text-xs text-stone-500">
+        Apareceu “Não foi possível abrir o arquivo” no Google? Isso acontece com várias contas Google abertas no Chrome. Faça os passos numa janela anônima
+        (Ctrl+Shift+N) entrando só na conta certa.
+      </p>
       {planilha.ligado && (
         <div className="mt-3 space-y-3">
+          {planilha.linkPlanilha && (
+            <a
+              href={planilha.linkPlanilha}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-block rounded-xl bg-emerald-600 px-4 py-2 font-bold text-white hover:bg-emerald-700"
+            >
+              📊 Abrir a planilha de vendas
+            </a>
+          )}
           <div
             className={`rounded-xl p-3 text-sm font-semibold ${est.tipo === 'erro' ? 'bg-red-50 text-red-800' : est.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}
           >
