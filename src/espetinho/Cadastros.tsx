@@ -18,6 +18,7 @@ import {
 } from './dados'
 import type { Insumo, Produto, Unidade } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
+import { ModalVenderEmDoses } from './Compras'
 
 const EMOJIS = ['🍛', '🍱', '🍢', '🥩', '🍗', '🌭', '🧀', '❤️', '🧅', '🫑', '🍖', '🥓', '🍤', '🧄', '🍞', '🥣', '🍚', '🥗', '🥤', '🍺', '💧', '🧃', '🍹', '🍫', '🍬', '⭐']
 
@@ -219,6 +220,7 @@ function SeletorUnidade({ valor, aoMudar }: { valor: Unidade; aoMudar: (u: Unida
 function Produtos({ dados }: { dados: Dados }) {
   const { produtos, setProdutos, insumos } = dados
   const [editando, setEditando] = useState<Produto | null>(null)
+  const [emDoses, setEmDoses] = useState<Produto | null>(null)
   const [novaDose, setNovaDose] = useState(false)
   const [copao, setCopao] = useState(false)
   const [fardo, setFardo] = useState(false)
@@ -348,6 +350,11 @@ function Produtos({ dados }: { dados: Dados }) {
                       <button className="rounded px-2 text-stone-500 hover:bg-stone-100" onClick={() => mover(idx, 1)} aria-label="Descer">
                         ↓
                       </button>
+                      {(p.categoria === 'bebida' || p.categoria === 'outro') && !p.ficha.length && !p.componentes?.length && (
+                        <button className={btn.secundario + ' !py-1'} title="Vender esta garrafa em doses" onClick={() => setEmDoses(p)}>
+                          🥃 Doses
+                        </button>
+                      )}
                       <button className={btn.secundario + ' !py-1'} onClick={() => setEditando(p)}>
                         Editar
                       </button>
@@ -359,6 +366,9 @@ function Produtos({ dados }: { dados: Dados }) {
           </tbody>
         </table>
       </div>
+      {emDoses && (
+        <ModalVenderEmDoses dados={dados} produto={emDoses} garrafas={0} totalPago={0} aoFechar={() => setEmDoses(null)} aoConfirmar={() => setEmDoses(null)} />
+      )}
       {editando && (
         <EditorProduto
           inicial={editando}

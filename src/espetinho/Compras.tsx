@@ -608,7 +608,7 @@ function NovaCompra({
                           {p.ficha.length > 0 && (
                             <div className="mt-0.5 text-xs font-semibold text-amber-700">comprado pronto: o custo passa a ser o desta compra</div>
                           )}
-                          {p.categoria === 'bebida' && (
+                          {p.categoria !== 'espeto' && (
                             <button className="mt-1 text-xs font-bold text-violet-700 underline" onClick={() => setEmDoses(l)}>
                               🥃 Vou vender em doses
                             </button>
@@ -927,7 +927,7 @@ function mlDoNome(nome: string) {
  * Garrafa comprada para vender em doses: cria a bebida como insumo em litros e o produto "Dose de …",
  * e a compra passa a lançar litros no estoque da bebida.
  */
-function ModalVenderEmDoses({
+export function ModalVenderEmDoses({
   dados,
   produto,
   garrafas,
@@ -953,6 +953,9 @@ function ModalVenderEmDoses({
   const custoDose = mlGarrafa > 0 ? (custoGarrafa * mlDose) / mlGarrafa : 0
   const dosesPorGarrafa = mlDose > 0 ? Math.floor(mlGarrafa / mlDose) : 0
   const lucro = precoDose - custoDose
+  // garrafas que já estavam no estoque como produto viram litros também
+  const jaTinha = Math.max(0, produto.estoque ?? 0)
+  const litrosJaTinha = Math.round(((jaTinha * mlGarrafa) / 1000) * 1000) / 1000
 
   function confirmar() {
     const insumoId = novoId()
@@ -964,7 +967,7 @@ function ModalVenderEmDoses({
         unidade: 'L',
         precoCompra: Math.round(custoGarrafa * 100) / 100,
         qtdCompra: mlGarrafa / 1000,
-        estoque: 0,
+        estoque: litrosJaTinha,
         grupo: 'Bebidas',
         // o código de barras da garrafa lança a bebida (em litros) nas compras
         ...(produto.codigos?.length ? { codigos: produto.codigos } : {}),
@@ -977,7 +980,7 @@ function ModalVenderEmDoses({
           : manterGarrafa
             ? // garrafa fechada vendida sai do mesmo estoque em litros
               { ...p, ficha: [{ insumoId, qtd: mlGarrafa }], custoDireto: 0, estoque: undefined }
-            : { ...p, ativo: false, codigos: undefined },
+            : { ...p, ativo: false, codigos: undefined, estoque: 0 },
       ),
       {
         id: novoId(),
@@ -1031,15 +1034,22 @@ function ModalVenderEmDoses({
         </div>
       </div>
       {custoGarrafa <= 0 && <p className="mt-2 text-xs text-amber-700">Preencha o valor pago na compra para ver o custo da dose.</p>}
-      <p className="mt-3 text-sm">
-        Nesta compra: {garrafas} garrafa{garrafas === 1 ? '' : 's'} × {mlGarrafa} ml = <b>{litros.toLocaleString('pt-BR')} L</b> no estoque.
-      </p>
+      {garrafas > 0 && (
+        <p className="mt-3 text-sm">
+          Nesta compra: {garrafas} garrafa{garrafas === 1 ? '' : 's'} × {mlGarrafa} ml = <b>{litros.toLocaleString('pt-BR')} L</b> no estoque.
+        </p>
+      )}
+      {jaTinha > 0 && (
+        <p className="mt-2 text-sm">
+          Já no estoque: {jaTinha} garrafa{jaTinha === 1 ? '' : 's'} = <b>{litrosJaTinha.toLocaleString('pt-BR')} L</b> ({Math.floor((jaTinha * mlGarrafa) / mlDose)} doses).
+        </p>
+      )}
       <label className="mt-2 flex items-center gap-2 text-sm font-semibold">
         <input type="checkbox" className="h-4 w-4" checked={manterGarrafa} onChange={(e) => setManterGarrafa(e.target.checked)} />
         Também vendo a garrafa fechada (mantém “{produto.nome}” na venda)
       </label>
       <button className={`${btn.primario} mt-4 w-full`} disabled={!nome.trim() || mlGarrafa <= 0 || mlDose <= 0} onClick={confirmar}>
-        Criar dose e lançar em litros
+        {garrafas > 0 ? 'Criar dose e lançar em litros' : 'Criar dose'}
       </button>
     </Modal>
   )
