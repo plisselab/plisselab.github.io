@@ -119,6 +119,8 @@ export interface ItemPedido {
   obs: string
   /** Combo: produtos escolhidos para 1 unidade do combo. */
   escolhas?: Escolha[]
+  /** Preço normal quando o preço foi mudado na hora (promoção). */
+  precoNormal?: number
   /** Pagamento de comanda: qual item da comanda este pagamento quita (qtd pode ser fração ao dividir a conta). */
   comandaItemId?: string
 }
@@ -262,6 +264,8 @@ export interface MovEstoque {
 /** Item anotado numa comanda (mesa). Sai do estoque ao ser lançado; entra no caixa quando é pago. */
 export interface ItemComanda {
   id: string
+  /** Preço normal quando o preço foi mudado na hora (promoção). */
+  precoNormal?: number
   produtoId: string
   nome: string
   categoria: Categoria

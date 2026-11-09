@@ -15,7 +15,7 @@ import { NOMES_FORMA, arred, brl, consumoDosItens, consumoInsumosDosItens, hora,
 import { imprimirConferencia, imprimirContaCompleta, imprimirCupons, imprimirLancamento, imprimirPedido } from './impressao'
 import type { Comanda, ItemComanda, Pagamento, Pedido } from './tipos'
 import { CampoNumero, CampoTexto, Imagem, Modal, btn } from './ui'
-import Venda, { ModalCortesia, ModalPagamento } from './Venda'
+import Venda, { ModalCortesia, ModalPagamento, ModalPreco } from './Venda'
 
 const tempoDesde = (iso: string) => {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
@@ -210,6 +210,7 @@ export function DetalheComanda({
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [juntando, setJuntando] = useState(false)
   const [cortesiaAberta, setCortesiaAberta] = useState(false)
+  const [precoDe, setPrecoDe] = useState<ItemComanda | null>(null)
   const outrasAbertas = dados.comandas.filter((x) => x.id !== c.id && statusComanda(x, pedidos) === 'aberta')
 
   /** Mesas que se juntaram: passa todos os itens desta comanda para outra (o estoque não muda). */
@@ -410,7 +411,20 @@ export function DetalheComanda({
                       </div>
                     )}
                   </div>
-                  <div className="text-right font-bold">{brl(item.preco * item.qtd)}</div>
+                  <div className="text-right">
+                    <div className="font-bold">{brl(item.preco * item.qtd)}</div>
+                    {item.precoNormal !== undefined && (
+                      <div className="text-xs">
+                        <span className="text-stone-400 line-through">{brl(item.precoNormal)}</span>{' '}
+                        <span className="rounded bg-emerald-100 px-1 font-bold text-emerald-800">PROMO {brl(item.preco)}</span>
+                      </div>
+                    )}
+                    {aberta && modo === 'ver' && pago < 0.0005 && (
+                      <button className="text-xs text-stone-500 underline decoration-dotted hover:text-orange-700" onClick={() => setPrecoDe(item)}>
+                        ✏️ preço
+                      </button>
+                    )}
+                  </div>
                   {modo === 'escolher' && falta > 0.0005 && (
                     <div className="flex items-center gap-1">
                       <button
@@ -570,6 +584,29 @@ export function DetalheComanda({
         </aside>
       </div>
 
+      {precoDe && (
+        <ModalPreco
+          nome={precoDe.nome}
+          normal={precoDe.precoNormal ?? precoDe.preco}
+          atual={precoDe.preco}
+          aoFechar={() => setPrecoDe(null)}
+          aoSalvar={(v) => {
+            const normal = precoDe.precoNormal ?? precoDe.preco
+            atualizar({
+              itens: c.itens.map((i) => {
+                if (i.id !== precoDe.id) return i
+                if (v === undefined) {
+                  const { precoNormal: _n, ...resto } = i
+                  void _n
+                  return { ...resto, preco: normal }
+                }
+                return { ...i, preco: v, precoNormal: normal }
+              }),
+            })
+            setPrecoDe(null)
+          }}
+        />
+      )}
       {cortesiaAberta && (
         <ModalCortesia
           valor={valorSelecao}

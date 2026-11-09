@@ -39,6 +39,8 @@ interface Linha {
   qtd: number
   obs: string
   escolhas?: Escolha[]
+  /** Preço mudado na hora (promoção): vale só para esta linha. */
+  precoManual?: number
 }
 
 const chaveEscolhas = (e?: Escolha[]) => (e ?? []).map((x) => `${x.produtoId}:${x.qtd}`).sort().join('|')
@@ -72,6 +74,8 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   const [divididaId, setDivididaId] = useState<string | null>(null)
   const [lancandoMais, setLancandoMais] = useState(false)
   const [cortesiaAberta, setCortesiaAberta] = useState(false)
+  /** Linha com o preço sendo mudado (promoção). */
+  const [precoDe, setPrecoDe] = useState<string | null>(null)
   const [obsAberta, setObsAberta] = useState<string | null>(null)
   const [ultimo, setUltimo] = useState<Pedido | null>(null)
   const [montandoCombo, setMontandoCombo] = useState<Produto | null>(null)
@@ -140,7 +144,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
   const prodPorId = (id: string) => produtos.find((p) => p.id === id)
   const precoLinha = (l: Linha) => {
     const p = prodPorId(l.produtoId)
-    return p ? precoComEscolhas(p, l.escolhas, precoBase(p)) : 0
+    return p ? (l.precoManual ?? precoComEscolhas(p, l.escolhas, precoBase(p))) : 0
   }
   const subtotal = arred(linhas.reduce((s, l) => s + precoLinha(l) * l.qtd, 0))
   const qtdItens = linhas.reduce((s, l) => s + l.qtd, 0)
@@ -166,7 +170,7 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
     }
     const chave = chaveEscolhas(escolhas)
     setLinhas((ls) => {
-      const ultima = [...ls].reverse().find((l) => l.produtoId === p.id && !l.obs && chaveEscolhas(l.escolhas) === chave)
+      const ultima = [...ls].reverse().find((l) => l.produtoId === p.id && !l.obs && chaveEscolhas(l.escolhas) === chave && l.precoManual === undefined)
       if (ultima) return ls.map((l) => (l.id === ultima.id ? { ...l, qtd: l.qtd + 1 } : l))
       return [...ls, { id: novoId(), produtoId: p.id, qtd: 1, obs: '', escolhas }]
     })
@@ -239,7 +243,8 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
           nome: p.nome,
           categoria: p.categoria,
           emoji: p.emoji,
-          preco: precoComEscolhas(p, l.escolhas, precoBase(p)),
+          preco: l.precoManual ?? precoComEscolhas(p, l.escolhas, precoBase(p)),
+          ...(l.precoManual !== undefined ? { precoNormal: precoComEscolhas(p, l.escolhas, precoBase(p)) } : {}),
           custo: arred(custoCompleto(p, insumos, produtos, l.escolhas)),
           qtd: l.qtd,
           obs: l.obs,
@@ -597,7 +602,14 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
                       <div className="text-sm font-semibold text-rose-700">{l.escolhas.map((e) => `${e.qtd}x ${e.nome}`).join(' + ')}</div>
                     )}
                     <div className="text-sm text-stone-500">
-                      {brl(precoLinha(l))} · <span className="font-semibold text-stone-800">{brl(precoLinha(l) * l.qtd)}</span>
+                      <button className="rounded px-1 underline decoration-dotted hover:bg-orange-50" title="Mudar o preço (promoção)" onClick={() => setPrecoDe(l.id)}>
+                        {l.precoManual !== undefined && (
+                          <span className="mr-1 text-xs text-stone-400 line-through">{brl(precoComEscolhas(p, l.escolhas, precoBase(p)))}</span>
+                        )}
+                        <span className={l.precoManual !== undefined ? 'font-bold text-emerald-700' : ''}>{brl(precoLinha(l))}</span> ✏️
+                      </button>{' '}
+                      · <span className="font-semibold text-stone-800">{brl(precoLinha(l) * l.qtd)}</span>
+                      {l.precoManual !== undefined && <span className="ml-1 rounded bg-emerald-100 px-1 text-xs font-bold text-emerald-800">PROMO</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
@@ -735,6 +747,24 @@ export default function Venda({ dados, irPara, comanda }: { dados: Dados; irPara
         />
       )}
 
+      {precoDe &&
+        (() => {
+          const l = linhas.find((x) => x.id === precoDe)
+          const p = l && prodPorId(l.produtoId)
+          if (!l || !p) return null
+          return (
+            <ModalPreco
+              nome={p.nome}
+              normal={precoComEscolhas(p, l.escolhas, precoBase(p))}
+              atual={precoLinha(l)}
+              aoFechar={() => setPrecoDe(null)}
+              aoSalvar={(v) => {
+                setLinhas((ls) => ls.map((x) => (x.id === l.id ? { ...x, precoManual: v } : x)))
+                setPrecoDe(null)
+              }}
+            />
+          )
+        })()}
       {cortesiaAberta && <ModalCortesia valor={subtotal} custo={arred(montarItens().reduce((s, i) => s + i.custo * i.qtd, 0))} aoFechar={() => setCortesiaAberta(false)} aoConfirmar={registrarCortesia} />}
       {pagando && (
         <ModalPagamento subtotal={subtotal} viagem={viagem} app={app ? NOMES_CANAL[canal] : undefined} aoFechar={() => setPagando(false)} aoConfirmar={finalizar} />
@@ -1101,6 +1131,53 @@ export function ModalCortesia({ valor, custo, aoFechar, aoConfirmar }: { valor: 
       <button className={`${btn.primario} mt-4 w-full text-lg`} disabled={!final} onClick={() => aoConfirmar(final)}>
         ✔ Registrar {final ? `(${final})` : ''}
       </button>
+    </Modal>
+  )
+}
+
+/** Mudar o preço de um item na hora (promoção). `aoSalvar(undefined)` volta ao preço normal. */
+export function ModalPreco({
+  nome,
+  normal,
+  atual,
+  aoFechar,
+  aoSalvar,
+}: {
+  nome: string
+  normal: number
+  atual: number
+  aoFechar: () => void
+  aoSalvar: (preco: number | undefined) => void
+}) {
+  const [v, setV] = useState(atual)
+  const off = normal > 0 ? ((normal - v) / normal) * 100 : 0
+  return (
+    <Modal titulo="✏️ Mudar preço" aberto aoFechar={aoFechar}>
+      <p className="font-bold">{nome}</p>
+      <p className="text-sm text-stone-500">Preço normal: {brl(normal)} — a mudança vale só para este item, não muda o cadastro.</p>
+      <CampoNumero className="mt-3" rotulo="Preço de cada" prefixo="R$" grande autoFocus valor={v} aoMudar={setV} />
+      <div className="mt-2 flex flex-wrap gap-2">
+        {[10, 20, 50].map((pc) => (
+          <button key={pc} className={btn.secundario + ' !py-1.5'} onClick={() => setV(arred(normal * (1 - pc / 100)))}>
+            −{pc}%
+          </button>
+        ))}
+      </div>
+      {v !== normal && v >= 0 && (
+        <p className={`mt-2 text-sm font-semibold ${v < normal ? 'text-emerald-700' : 'text-orange-700'}`}>
+          {v < normal ? `Desconto de ${brl(normal - v)} (${off.toFixed(0)}%) em cada` : `${brl(v - normal)} a mais em cada`}
+        </p>
+      )}
+      <div className="mt-4 flex gap-2">
+        {atual !== normal && (
+          <button className={`${btn.secundario} flex-1`} onClick={() => aoSalvar(undefined)}>
+            Voltar ao normal
+          </button>
+        )}
+        <button className={`${btn.verde} flex-1`} onClick={() => aoSalvar(Math.abs(v - normal) < 0.005 ? undefined : arred(v))}>
+          ✔ Usar {brl(v)}
+        </button>
+      </div>
     </Modal>
   )
 }
