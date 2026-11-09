@@ -269,6 +269,9 @@ function Produtos({ dados }: { dados: Dados }) {
         <button className={btn.secundario} onClick={() => setFardo(true)}>
           📦 Criar fardo
         </button>
+        <button className={btn.secundario} onClick={() => setEditando(espetoNoPao(dados))}>
+          🥖 Espeto no pão
+        </button>
         {!temBar && (
           <button
             className={btn.secundario}
@@ -568,6 +571,38 @@ function EditorProduto({
                       })}
                     </div>
                     {c.opcoes.length === 0 && <p className="mt-1 text-xs font-semibold text-red-600">Marque pelo menos uma opção.</p>}
+                    {c.opcoes.length > 1 && (
+                      <details className="mt-2" open={Object.values(c.acrescimos ?? {}).some((v) => v > 0)}>
+                        <summary className="cursor-pointer text-xs font-semibold text-stone-600">+R$ a mais por opção (ex.: carne mais cara)</summary>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {c.opcoes.map((id) => {
+                            const o = produtos.find((x) => x.id === id)
+                            if (!o) return null
+                            return (
+                              <label key={id} className="flex items-center gap-1 rounded-lg bg-stone-50 px-2 py-1 text-xs">
+                                <span className="font-semibold">{o.nome}</span>
+                                <CampoNumero
+                                  className="w-20"
+                                  prefixo="+"
+                                  valor={c.acrescimos?.[id] ?? 0}
+                                  aoMudar={(v) =>
+                                    setComps(
+                                      comps.map((x, j) => {
+                                        if (j !== idx) return x
+                                        const a = { ...(x.acrescimos ?? {}) }
+                                        if (v > 0) a[id] = v
+                                        else delete a[id]
+                                        return { ...x, acrescimos: Object.keys(a).length ? a : undefined }
+                                      }),
+                                    )
+                                  }
+                                />
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1452,4 +1487,44 @@ function adicionarExemplosAdega(dados: Dados) {
     fardo('adega-f-skol', 'adega-skol', 'Skol lata', 12, 48),
   ]
   dados.setProdutos((ps) => [...ps, ...novos.filter((n) => !ps.some((p) => p.id === n.id))])
+}
+
+/**
+ * Combo "Espeto no pão": o cliente escolhe o espeto; vai 1 pão + vinagrete.
+ * Preço base = espeto mais barato + R$ 4; espetos mais caros pagam a diferença (+R$).
+ * Abre no editor para conferir antes de salvar.
+ */
+function espetoNoPao(dados: Dados): Produto {
+  const existente = dados.produtos.find((p) => p.categoria === 'combo' && /espeto no p[aã]o/i.test(p.nome))
+  if (existente) return existente
+  if (!dados.insumos.some((i) => i.id === 'ins-pao')) {
+    dados.setInsumos((is) =>
+      is.some((i) => i.id === 'ins-pao') ? is : [...is, { id: 'ins-pao', nome: 'Pão francês', unidade: 'un', precoCompra: 9, qtdCompra: 12, grupo: 'Pães' }],
+    )
+  }
+  const espetos = dados.produtos.filter((p) => p.categoria === 'espeto' && p.ativo && p.preco > 0)
+  const menor = espetos.length ? Math.min(...espetos.map((p) => p.preco)) : 8
+  const acrescimos = Object.fromEntries(espetos.filter((p) => p.preco > menor).map((p) => [p.id, Math.round((p.preco - menor) * 100) / 100]))
+  const temVinagrete = dados.insumos.some((i) => i.id === 'ins-vinagrete')
+  return {
+    id: novoId(),
+    nome: 'Espeto no pão',
+    categoria: 'combo',
+    preco: menor + 4,
+    emoji: '🥖',
+    ficha: [{ insumoId: 'ins-pao', qtd: 1 }, ...(temVinagrete ? [{ insumoId: 'ins-vinagrete', qtd: 30 }] : [])],
+    custoDireto: 0,
+    ativo: true,
+    descricao: 'Espeto à escolha no pão francês com vinagrete',
+    tamanho: '1 pão + 1 espeto',
+    componentes: [
+      {
+        id: 'c-espeto',
+        nome: 'Espeto',
+        qtd: 1,
+        opcoes: espetos.map((p) => p.id),
+        ...(Object.keys(acrescimos).length ? { acrescimos } : {}),
+      },
+    ],
+  }
 }
