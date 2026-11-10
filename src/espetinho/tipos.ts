@@ -99,7 +99,7 @@ export interface Produto {
 export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito' | 'app'
 
 /** Onde o pedido foi feito: no balcão ou num app de delivery. */
-export type Canal = 'balcao' | 'ifood' | '99food'
+export type Canal = 'balcao' | 'ifood' | '99food' | 'site'
 
 export interface Pagamento {
   forma: FormaPagamento
@@ -162,6 +162,19 @@ export interface Pedido {
   cortesia?: { motivo: string; /** quanto valeria na venda */ valor: number }
   /** Pedido que veio do iFood/99Food (a comissão do app entra em `taxas`). */
   canal?: Canal
+  /** Taxa de entrega cobrada do cliente (já somada no total). */
+  taxaEntrega?: number
+  /** Pedido feito pelo cardápio digital: endereço/contato e o id do pedido na nuvem. */
+  online?: {
+    id: string
+    tipo: 'entrega' | 'retirada'
+    telefone: string
+    endereco?: string
+    bairro?: string
+    referencia?: string
+    pagamento: string
+    obs?: string
+  }
   cancelado: boolean
   entregue: boolean
 }
@@ -232,6 +245,32 @@ export interface Config {
   acrescimoDelivery: number
   /** Cardápio: esconder sozinho o que está sem estoque. */
   cardapioSemEsgotados?: boolean
+  /** Cardápio digital (pedidos pelo celular do cliente). */
+  online?: ConfigOnline
+}
+
+export type TipoChavePix = 'cpf' | 'cnpj' | 'telefone' | 'email' | 'aleatoria'
+
+export interface ConfigOnline {
+  /** Recebendo pedidos agora (loja aberta no cardápio digital). */
+  aceitando: boolean
+  bairros: { nome: string; taxa: number }[]
+  retirada: boolean
+  entrega: boolean
+  tempoEntrega: string
+  tempoRetirada: string
+  pedidoMinimo: number
+  pixTipo: TipoChavePix
+  pixChave: string
+  pixNome: string
+  pixCidade: string
+  /** Aceita Pix pago na hora pelo celular (o cliente vê o QR Code). */
+  pixAntecipado: boolean
+  aviso: string
+  /** WhatsApp da loja (só números, com DDD) para o cliente falar com vocês. */
+  whatsapp: string
+  /** Toca o alarme até aceitar o pedido. */
+  som: boolean
 }
 
 export type TipoMovEstoque = 'compra' | 'preparo' | 'montagem' | 'contagem'

@@ -16,12 +16,14 @@ import { lerConexaoDaUrl, limparUrl } from './conectar'
 import Relatorios from './Relatorios'
 import Cardapio from './Cardapio'
 import Venda from './Venda'
+import PedidosOnline, { AlertaPedidoOnline, useOnline } from './PedidosOnline'
 
-type Aba = 'venda' | 'comandas' | 'compras' | 'reposicao' | 'cardapio' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
+type Aba = 'venda' | 'comandas' | 'online' | 'compras' | 'reposicao' | 'cardapio' | 'painel' | 'estoque' | 'caixa' | 'relatorios' | 'cadastros' | 'config'
 
 const ABAS: { id: Aba; nome: string; icone: string }[] = [
   { id: 'venda', nome: 'Vender', icone: '🛒' },
   { id: 'comandas', nome: 'Comandas', icone: '📝' },
+  { id: 'online', nome: 'Pedidos online', icone: '📲' },
   { id: 'compras', nome: 'Compras', icone: '🧾' },
   { id: 'reposicao', nome: 'Reposição', icone: '🔁' },
   { id: 'cardapio', nome: 'Cardápio', icone: '📋' },
@@ -38,6 +40,7 @@ export default function Espetinho() {
   const dados = useEspetoDados()
   const planilha = usePlanilha(dados)
   const pasta = usePasta(dados)
+  const online = useOnline(dados)
   const [carregando, setCarregando] = useState(false)
   const [aba, setAba] = useState<Aba>('venda')
   const [gaveta, setGaveta] = useState(false)
@@ -167,6 +170,11 @@ export default function Espetinho() {
           >
             <span className="text-xl">{a.icone}</span>
             {!curto && <span className="flex-1 text-left">{a.nome}</span>}
+            {a.id === 'online' && online.novos.length > 0 && (
+              <span className={`animate-pulse rounded-full bg-red-500 px-1.5 text-xs font-black text-white ${curto ? 'absolute right-1 top-1' : ''}`}>
+                {online.novos.length}
+              </span>
+            )}
             {a.id === 'comandas' && comandasAbertas > 0 && (
               <span
                 className={`rounded-full bg-white px-1.5 text-xs font-black text-orange-700 ${curto ? 'absolute right-1 top-1' : ''}`}
@@ -317,9 +325,11 @@ export default function Espetinho() {
           </div>
         </div>
       )}
+      {aba !== 'online' && <AlertaPedidoOnline online={online} aoVer={() => irPara('online')} />}
       <main className="mx-auto max-w-[1500px] p-3 sm:p-4">
         {aba === 'venda' && <Venda dados={dados} irPara={irPara} />}
         {aba === 'comandas' && <Comandas dados={dados} irPara={irPara} />}
+        {aba === 'online' && <PedidosOnline dados={dados} online={online} irPara={irPara} />}
         {aba === 'compras' && <Compras dados={dados} />}
         {aba === 'reposicao' && <Reposicao dados={dados} />}
         {aba === 'cardapio' && <Cardapio dados={dados} />}

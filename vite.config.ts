@@ -5,6 +5,12 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   base: '/',
   plugins: [react()],
+  build: {
+    rollupOptions: {
+      // loja (raiz) + cardápio digital do espetinho em /cardapio/
+      input: { main: 'index.html', cardapio: 'cardapio/index.html' },
+    },
+  },
   server: {
     host: true,
   },
