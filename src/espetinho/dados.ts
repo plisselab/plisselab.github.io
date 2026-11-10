@@ -330,7 +330,7 @@ export const CONFIG_INICIAL: Config = {
   acrescimoDelivery: 20,
 }
 
-export const NOMES_CANAL: Record<Canal, string> = { balcao: 'Balcão', ifood: 'iFood', '99food': '99Food' }
+export const NOMES_CANAL: Record<Canal, string> = { balcao: 'Balcão', ifood: 'iFood', '99food': '99Food', site: 'Cardápio digital' }
 
 /** Comissão do app de delivery, em %. */
 export function taxaDoCanal(canal: Canal | undefined, config: Config) {

@@ -58,7 +58,22 @@ function cabecalhoLoja(config: Config) {
   ${config.telefone ? `<div class="c peq">${esc(config.telefone)}</div>` : ''}`
 }
 
-const rotuloViagem = (p: Pedido) => (p.canal === 'ifood' ? 'iFOOD — VIAGEM' : p.canal === '99food' ? '99FOOD — VIAGEM' : 'PARA VIAGEM')
+const rotuloViagem = (p: Pedido) =>
+  p.online
+    ? p.online.tipo === 'entrega'
+      ? 'DELIVERY — CARDÁPIO DIGITAL'
+      : 'RETIRADA — CARDÁPIO DIGITAL'
+    : p.canal === 'ifood'
+      ? 'iFOOD — VIAGEM'
+      : p.canal === '99food'
+        ? '99FOOD — VIAGEM'
+        : 'PARA VIAGEM'
+
+/** Endereço e contato do pedido do cardápio digital. */
+const blocoEntrega = (p: Pedido) =>
+  p.online
+    ? `<hr><div class="peq">${p.online.endereco ? `<b>ENDEREÇO:</b> ${esc(p.online.endereco)}<br>` : ''}${p.online.referencia ? `<b>REF.:</b> ${esc(p.online.referencia)}<br>` : ''}<b>TEL.:</b> ${esc(p.online.telefone)}<br><b>PAGAMENTO:</b> ${esc(p.online.pagamento)}${p.online.obs ? `<br><b>OBS.:</b> ${esc(p.online.obs)}` : ''}</div>`
+    : ''
 const blocoViagem = (p: Pedido) =>
   p.viagem ? `<div class="viagem">${rotuloViagem(p)}</div>` : `<div class="local">COMER AQUI</div>`
 
@@ -82,6 +97,7 @@ function viaChurrasqueira(p: Pedido, cab?: { rotulo: string; numero: number; avi
     <div class="c">${hora(p.criadoEm)} · ${data(p.criadoEm)}</div>
     ${cab ? "" : blocoViagem(p)}
     ${p.cliente ? `<div class="cliente">${esc(p.cliente)}</div>` : ''}
+    ${p.online?.obs ? `<div class="c grande">OBS.: ${esc(p.online.obs.toUpperCase())}</div>` : ''}
     ${p.viagem && p.embalagens?.length ? `<div class="c grande">EMBALAR: ${p.embalagens.map((e) => `${e.qtd} ${esc(e.nome.toUpperCase())}`).join(' + ')}</div>` : ''}
     ${grupos
       .map(
@@ -118,6 +134,7 @@ function viaCliente(p: Pedido, config: Config) {
     <div class="c">${data(p.criadoEm)} ${hora(p.criadoEm)}</div>
     ${p.viagem ? `<div class="viagem">${rotuloViagem(p)}</div>` : ''}
     ${p.cliente ? `<div class="c grande">${esc(p.cliente)}</div>` : ''}
+    ${blocoEntrega(p)}
     ${p.parte ? `<div class="tag">CONTA DIVIDIDA — PARTE ${p.parte.replace('/', ' DE ')}</div>` : ''}
     <hr>
     <table>
@@ -131,7 +148,9 @@ function viaCliente(p: Pedido, config: Config) {
     ${p.parte ? `<div class="c peq">Sua parte dos itens acima</div>` : ''}
     <hr>
     <table>
-      ${p.desconto > 0 ? `<tr class="linha"><td>Subtotal</td><td class="r">${brl(p.subtotal)}</td></tr><tr class="linha"><td>Desconto</td><td class="r">-${brl(p.desconto)}</td></tr>` : ''}
+      ${p.desconto > 0 || p.taxaEntrega ? `<tr class="linha"><td>Subtotal</td><td class="r">${brl(p.subtotal)}</td></tr>` : ''}
+      ${p.desconto > 0 ? `<tr class="linha"><td>Desconto</td><td class="r">-${brl(p.desconto)}</td></tr>` : ''}
+      ${p.taxaEntrega ? `<tr class="linha"><td>Taxa de entrega</td><td class="r">${brl(p.taxaEntrega)}</td></tr>` : ''}
       <tr class="tot"><td>TOTAL</td><td class="r">${brl(p.total)}</td></tr>
       ${p.pagamentos.map((pg) => `<tr class="linha"><td>${NOMES_FORMA[pg.forma]}</td><td class="r">${brl(pg.valor)}</td></tr>`).join('')}
       ${p.recebidoDinheiro > 0 ? `<tr class="linha"><td>Recebido em dinheiro</td><td class="r">${brl(p.recebidoDinheiro)}</td></tr>` : ''}

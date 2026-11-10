@@ -1,0 +1,17 @@
+{
+  "name": "Cardápio — peça pelo celular",
+  "short_name": "Cardápio",
+  "description": "Espetos, cervejas, doses e conveniência. Peça pelo celular e receba em casa.",
+  "start_url": "/cardapio/",
+  "scope": "/cardapio/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fff7ed",
+  "theme_color": "#c2410c",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/cardapio/icone-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/cardapio/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/cardapio/icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

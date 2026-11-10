@@ -175,3 +175,6 @@ export async function listarPedidos(): Promise<Pedido[]> {
 export const prepararLogin = () => {
   carregar().catch(() => {})
 }
+
+/** Acesso direto ao Firebase já iniciado (usado pelo cardápio digital do espetinho e pelo PDV). */
+export const conexaoFirebase = () => carregar()
